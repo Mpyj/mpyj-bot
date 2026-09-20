@@ -1,7 +1,10 @@
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from config import OWNER_TELEGRAM_ID
-from database import get_all_users, get_user
+from database import (
+    get_all_users, get_user, get_all_pending_rewards,
+    get_pending_reward, update_pending_reward_status, add_history
+)
 from blockchain import (
     get_balance, get_owner_eth_balance, get_owner_token_balance,
     reward_winner, send_tokens_from_owner
@@ -66,6 +69,7 @@ async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     eth_bal = get_owner_eth_balance()
     token_bal = get_owner_token_balance()
+    pending = get_all_pending_rewards()
     
     text = f"📊 آمار کلی Mpyj\n\n"
     text += f"━━━━━━━━━━━━━━━\n"
@@ -77,9 +81,50 @@ async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text += f"━━━━━━━━━━━━━━━\n"
     text += f"⛽ ETH Owner: {eth_bal:.4f}\n"
     text += f"🪙 MPYJ Owner: {format_number(token_bal)}\n"
+    text += f"🎁 جوایز در انتظار: {len(pending)}\n"
     text += f"━━━━━━━━━━━━━━━"
     
     await update.message.reply_text(text)
+
+
+async def show_pending_rewards(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """نمایش جوایز در انتظار تایید (فقط ادمین)"""
+    if not is_owner(update.effective_user.id):
+        return
+    
+    rewards = get_all_pending_rewards()
+    
+    if not rewards:
+        await update.message.reply_text(
+            "🎁 جوایز در انتظار\n\n"
+            "━━━━━━━━━━━━━━━\n"
+            "هیچ جایزه‌ای در انتظار تایید نیست!"
+        )
+        return
+    
+    text = f"🎁 جوایز در انتظار ({len(rewards)} مورد)\n\n━━━━━━━━━━━━━━━\n"
+    
+    keyboard = []
+    for r in rewards[:10]:
+        user = get_user(r["user_id"])
+        name = user["first_name"] or user["username"] or f"کاربر {r['user_id']}"
+        
+        text += f"🆔 #{r['id']}\n"
+        text += f"👤 {name}\n"
+        text += f"💰 {r['amount']} MPYJ\n"
+        text += f"🔖 {r['reason']}\n\n"
+        
+        keyboard.append([
+            InlineKeyboardButton(f"✅ تایید #{r['id']}", callback_data=f"approve_reward_{r['id']}"),
+            InlineKeyboardButton(f"❌ رد #{r['id']}", callback_data=f"reject_reward_{r['id']}"),
+        ])
+    
+    text += "━━━━━━━━━━━━━━━"
+    
+    await update.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 
 async def start_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -141,7 +186,6 @@ async def choose_reward_amount(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def start_add_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """شروع افزایش موجودی"""
     if not is_owner(update.effective_user.id):
         return
     

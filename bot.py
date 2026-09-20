@@ -6,7 +6,8 @@ from telegram.ext import (
 from config import TELEGRAM_TOKEN, OWNER_TELEGRAM_ID
 from database import (
     init_db, get_user, get_all_users, get_user_by_username,
-    add_history, create_bet
+    add_history, create_bet, get_pending_reward,
+    update_pending_reward_status
 )
 from blockchain import get_balance, send_tokens_from_owner, reward_winner
 from commands.helpers import MAIN_MENU, ADMIN_MENU, ADMIN_MAIN_MENU
@@ -21,7 +22,8 @@ from commands.bet import start_bet, choose_bet_amount
 from commands.admin import (
     show_admin_panel, show_users, show_stats,
     start_reward, choose_reward_amount,
-    start_add_balance, start_remove_balance, start_broadcast
+    start_add_balance, start_remove_balance, start_broadcast,
+    show_pending_rewards
 )
 
 
@@ -61,7 +63,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    # ==================== برگشت به پیام خوش‌آمدگویی ====================
+    # ==================== برگشت ====================
     elif data == "back_to_start":
         user = query.from_user
         existing = get_user(user.id)
@@ -94,7 +96,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
     
-    # ==================== لغو عمومی ====================
+    # ==================== لغو ====================
     elif data == "cancel_all":
         context.user_data.clear()
         menu = ADMIN_MAIN_MENU if is_owner(user_id) else MAIN_MENU
@@ -274,6 +276,53 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
         return
     
+    # ==================== ادمین: تایید/رد جایزه ====================
+    elif data.startswith("approve_reward_"):
+        reward_id = int(data.replace("approve_reward_", ""))
+        
+        reward = get_pending_reward(reward_id)
+        if not reward or reward["status"] != "pending":
+            await query.edit_message_text("⚠️ این جایزه قبلاً پردازش شده!")
+            return
+        
+        user = get_user(reward["user_id"])
+        name = user["first_name"] or user["username"] or f"کاربر {reward['user_id']}"
+        
+        await query.edit_message_text(f"⏳ در حال ارسال جایزه به {name}...")
+        
+        tx_hash, error = send_tokens_from_owner(
+            user["wallet_address"], reward["amount"]
+        )
+        
+        if error:
+            await query.edit_message_text(
+                f"❌ خطا در ارسال:\n\n{error}\n\n🆔 #{reward_id}"
+            )
+        else:
+            update_pending_reward_status(reward_id, "approved")
+            add_history(OWNER_TELEGRAM_ID, reward["user_id"], reward["amount"], "reward", tx_hash)
+            await query.edit_message_text(
+                f"✅ جایزه پرداخت شد!\n\n"
+                f"━━━━━━━━━━━━━━━\n"
+                f"👤 {name}\n"
+                f"💰 {reward['amount']} MPYJ\n"
+                f"🔗 {tx_hash[:30]}...\n"
+                f"━━━━━━━━━━━━━━━"
+            )
+        return
+    
+    elif data.startswith("reject_reward_"):
+        reward_id = int(data.replace("reject_reward_", ""))
+        
+        reward = get_pending_reward(reward_id)
+        if not reward:
+            await query.edit_message_text("⚠️ جایزه پیدا نشد!")
+            return
+        
+        update_pending_reward_status(reward_id, "rejected")
+        await query.edit_message_text(f"❌ جایزه #{reward_id} رد شد.")
+        return
+    
     # ==================== ادمین: افزایش ====================
     elif data.startswith("admin_add_"):
         target_id = int(data.replace("admin_add_", ""))
@@ -398,8 +447,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
         elif action == "remove":
             await update.message.reply_text(
-                "⚠️ کاهش موجودی فعلاً غیرفعاله.\n"
-                "(چون توکن‌ها تو بلاک‌چین قفل شدن)",
+                "⚠️ کاهش موجودی فعلاً غیرفعاله.",
                 reply_markup=ADMIN_MENU
             )
         
@@ -429,7 +477,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ===== سوییچ منو =====
     if is_owner(user_id) and text == "👤 منوی کاربری":
         await update.message.reply_text(
-            "👤 منوی کاربری:\n(برای برگشت به پنل ادمین، دکمه پایین رو بزن)",
+            "👤 منوی کاربری:",
             reply_markup=ADMIN_MAIN_MENU
         )
         return
@@ -460,6 +508,9 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         elif text == "📢 پیام همگانی":
             await start_broadcast(update, context)
+            return
+        elif text == "🎯 جوایز در انتظار":
+            await show_pending_rewards(update, context)
             return
     
     # ===== منوی کاربری =====

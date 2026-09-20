@@ -62,6 +62,16 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS pending_rewards (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT,
+                amount BIGINT,
+                reason TEXT,
+                status TEXT DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
     else:
         c.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -96,6 +106,16 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS pending_rewards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                amount INTEGER,
+                reason TEXT,
+                status TEXT DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
     
     conn.commit()
     c.close()
@@ -104,14 +124,11 @@ def init_db():
 
 # ==================== تبدیل ====================
 def _row_to_dict(row):
-    """تبدیل Row به dict، چه PostgreSQL چه SQLite"""
     if row is None:
         return None
     if USE_POSTGRES:
-        # psycopg2 با RealDictCursor خودش dict برمی‌گردونه
         return dict(row)
     else:
-        # sqlite3.Row رو باید به dict تبدیل کنیم
         return dict(row)
 
 
@@ -252,3 +269,62 @@ def create_bet(title, player1_id, player2_id, amount):
     c.close()
     conn.close()
     return bet_id
+
+
+# ==================== جوایز در انتظار ====================
+def create_pending_reward(user_id, amount, reason):
+    conn = get_conn()
+    c = conn.cursor()
+    if USE_POSTGRES:
+        c.execute("""
+            INSERT INTO pending_rewards (user_id, amount, reason)
+            VALUES (%s, %s, %s) RETURNING id
+        """, (user_id, amount, reason))
+        reward_id = c.fetchone()[0]
+    else:
+        c.execute("""
+            INSERT INTO pending_rewards (user_id, amount, reason)
+            VALUES (?, ?, ?)
+        """, (user_id, amount, reason))
+        reward_id = c.lastrowid
+    conn.commit()
+    c.close()
+    conn.close()
+    return reward_id
+
+
+def get_pending_reward(reward_id):
+    conn = get_conn()
+    if USE_POSTGRES:
+        c = conn.cursor(cursor_factory=RealDictCursor)
+    else:
+        c = conn.cursor()
+    c.execute(f"SELECT * FROM pending_rewards WHERE id = {PLACEHOLDER}", (reward_id,))
+    row = c.fetchone()
+    c.close()
+    conn.close()
+    return _row_to_dict(row)
+
+
+def update_pending_reward_status(reward_id, status):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(f"""
+        UPDATE pending_rewards SET status = {PLACEHOLDER} WHERE id = {PLACEHOLDER}
+    """, (status, reward_id))
+    conn.commit()
+    c.close()
+    conn.close()
+
+
+def get_all_pending_rewards():
+    conn = get_conn()
+    if USE_POSTGRES:
+        c = conn.cursor(cursor_factory=RealDictCursor)
+    else:
+        c = conn.cursor()
+    c.execute("SELECT * FROM pending_rewards WHERE status = 'pending' ORDER BY created_at DESC")
+    rows = c.fetchall()
+    c.close()
+    conn.close()
+    return [_row_to_dict(r) for r in rows]
