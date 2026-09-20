@@ -19,6 +19,8 @@ from commands.help import show_help
 from commands.history import show_history
 from commands.send import start_send, choose_send_amount
 from commands.bet import start_bet, choose_bet_amount
+from commands.quests import show_quests, do_quest
+from commands.lottery import show_lottery, buy_ticket
 from commands.admin import (
     show_admin_panel, show_users, show_stats,
     start_reward, choose_reward_amount,
@@ -55,6 +57,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📤 ارسال — فرستادن سکه\n"
             "🎲 شرط‌بندی — شرط با دوستان\n"
             "🏆 رتبه‌ها — جدول امتیازات\n"
+            "🎯 ماموریت‌ها — انجام ماموریت\n"
+            "🎰 لاتاری — شانس بردن جایزه\n"
             "👤 پروفایل — اطلاعات حساب\n"
             "📜 تاریخچه — تراکنش‌های اخیر\n"
             "━━━━━━━━━━━━━━━\n\n"
@@ -104,6 +108,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(
             chat_id=user_id, text="منو:", reply_markup=menu
         )
+        return
+    
+    # ==================== ماموریت‌ها ====================
+    elif data.startswith("quest_do_"):
+        await do_quest(update, context)
+        return
+    
+    # ==================== لاتاری ====================
+    elif data == "lottery_buy":
+        await buy_ticket(update, context)
         return
     
     # ==================== 📤 ارسال ====================
@@ -522,6 +536,10 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await start_bet(update, context)
     elif text == "🏆 رتبه‌ها":
         await show_leaderboard(update, context)
+    elif text == "🎯 ماموریت‌ها":
+        await show_quests(update, context)
+    elif text == "🎰 لاتاری":
+        await show_lottery(update, context)
     elif text == "👤 پروفایل":
         await show_profile(update, context)
     elif text == "📜 تاریخچه":

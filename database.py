@@ -72,6 +72,23 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS daily_quests (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT,
+                quest_type TEXT,
+                completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS lottery_tickets (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT,
+                ticket_number INTEGER,
+                week_number INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
     else:
         c.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -116,6 +133,23 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS daily_quests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                quest_type TEXT,
+                completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS lottery_tickets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                ticket_number INTEGER,
+                week_number INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
     
     conn.commit()
     c.close()
@@ -126,10 +160,7 @@ def init_db():
 def _row_to_dict(row):
     if row is None:
         return None
-    if USE_POSTGRES:
-        return dict(row)
-    else:
-        return dict(row)
+    return dict(row)
 
 
 # ==================== کاربران ====================
@@ -324,6 +355,97 @@ def get_all_pending_rewards():
     else:
         c = conn.cursor()
     c.execute("SELECT * FROM pending_rewards WHERE status = 'pending' ORDER BY created_at DESC")
+    rows = c.fetchall()
+    c.close()
+    conn.close()
+    return [_row_to_dict(r) for r in rows]
+
+
+# ==================== ماموریت‌ها ====================
+def has_done_quest_today(user_id, quest_type):
+    conn = get_conn()
+    if USE_POSTGRES:
+        c = conn.cursor(cursor_factory=RealDictCursor)
+        c.execute(f"""
+            SELECT * FROM daily_quests 
+            WHERE user_id = {PLACEHOLDER} AND quest_type = {PLACEHOLDER}
+            AND DATE(completed_at) = CURRENT_DATE
+        """, (user_id, quest_type))
+    else:
+        c = conn.cursor()
+        c.execute(f"""
+            SELECT * FROM daily_quests 
+            WHERE user_id = {PLACEHOLDER} AND quest_type = {PLACEHOLDER}
+            AND DATE(completed_at) = DATE('now')
+        """, (user_id, quest_type))
+    row = c.fetchone()
+    c.close()
+    conn.close()
+    return row is not None
+
+
+def add_quest_completion(user_id, quest_type):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(f"""
+        INSERT INTO daily_quests (user_id, quest_type)
+        VALUES ({PLACEHOLDER}, {PLACEHOLDER})
+    """, (user_id, quest_type))
+    conn.commit()
+    c.close()
+    conn.close()
+
+
+# ==================== لاتاری ====================
+def get_week_number():
+    import datetime
+    return datetime.date.today().isocalendar()[1]
+
+
+def buy_lottery_ticket(user_id):
+    week = get_week_number()
+    conn = get_conn()
+    c = conn.cursor()
+    
+    if USE_POSTGRES:
+        c.execute(f"""
+            SELECT * FROM lottery_tickets 
+            WHERE user_id = {PLACEHOLDER} AND week_number = {PLACEHOLDER}
+        """, (user_id, week))
+    else:
+        c.execute(f"""
+            SELECT * FROM lottery_tickets 
+            WHERE user_id = {PLACEHOLDER} AND week_number = {PLACEHOLDER}
+        """, (user_id, week))
+    
+    if c.fetchone():
+        c.close()
+        conn.close()
+        return None, "تو این هفته قبلاً بلیط خریدی!"
+    
+    import random
+    ticket_number = random.randint(1000, 9999)
+    
+    c.execute(f"""
+        INSERT INTO lottery_tickets (user_id, ticket_number, week_number)
+        VALUES ({PLACEHOLDER}, {PLACEHOLDER}, {PLACEHOLDER})
+    """, (user_id, ticket_number, week))
+    conn.commit()
+    c.close()
+    conn.close()
+    return ticket_number, None
+
+
+def get_lottery_participants():
+    week = get_week_number()
+    conn = get_conn()
+    if USE_POSTGRES:
+        c = conn.cursor(cursor_factory=RealDictCursor)
+    else:
+        c = conn.cursor()
+    c.execute(f"""
+        SELECT * FROM lottery_tickets WHERE week_number = {PLACEHOLDER}
+    """, (week,))
     rows = c.fetchall()
     c.close()
     conn.close()
