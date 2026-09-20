@@ -22,6 +22,7 @@ else:
     
     PLACEHOLDER = "?"
 
+
 # ==================== init ====================
 def init_db():
     conn = get_conn()
@@ -100,22 +101,33 @@ def init_db():
     c.close()
     conn.close()
 
-# ==================== کاربران ====================
+
+# ==================== تبدیل ====================
 def _row_to_dict(row):
+    """تبدیل Row به dict، چه PostgreSQL چه SQLite"""
     if row is None:
         return None
     if USE_POSTGRES:
+        # psycopg2 با RealDictCursor خودش dict برمی‌گردونه
         return dict(row)
-    return dict(row)
+    else:
+        # sqlite3.Row رو باید به dict تبدیل کنیم
+        return dict(row)
 
+
+# ==================== کاربران ====================
 def get_user(telegram_id):
     conn = get_conn()
-    c = conn.cursor()
+    if USE_POSTGRES:
+        c = conn.cursor(cursor_factory=RealDictCursor)
+    else:
+        c = conn.cursor()
     c.execute(f"SELECT * FROM users WHERE telegram_id = {PLACEHOLDER}", (telegram_id,))
     row = c.fetchone()
     c.close()
     conn.close()
     return _row_to_dict(row)
+
 
 def add_user(telegram_id, username, first_name, wallet_address, private_key):
     encrypted_key = encrypt(private_key)
@@ -128,12 +140,14 @@ def add_user(telegram_id, username, first_name, wallet_address, private_key):
         """, (telegram_id, username, first_name, wallet_address, encrypted_key))
         conn.commit()
         return True
-    except Exception:
+    except Exception as e:
+        print(f"❌ add_user error: {e}")
         conn.rollback()
         return False
     finally:
         c.close()
         conn.close()
+
 
 def get_user_private_key(telegram_id):
     user = get_user(telegram_id)
@@ -145,18 +159,26 @@ def get_user_private_key(telegram_id):
             return None
     return None
 
+
 def get_all_users():
     conn = get_conn()
-    c = conn.cursor()
+    if USE_POSTGRES:
+        c = conn.cursor(cursor_factory=RealDictCursor)
+    else:
+        c = conn.cursor()
     c.execute("SELECT telegram_id, username, first_name, wallet_address FROM users")
     rows = c.fetchall()
     c.close()
     conn.close()
     return [_row_to_dict(r) for r in rows]
 
+
 def get_all_users_except(exclude_id):
     conn = get_conn()
-    c = conn.cursor()
+    if USE_POSTGRES:
+        c = conn.cursor(cursor_factory=RealDictCursor)
+    else:
+        c = conn.cursor()
     c.execute(f"""
         SELECT telegram_id, username, first_name, wallet_address
         FROM users WHERE telegram_id != {PLACEHOLDER}
@@ -166,14 +188,19 @@ def get_all_users_except(exclude_id):
     conn.close()
     return [_row_to_dict(r) for r in rows]
 
+
 def get_user_by_username(username):
     conn = get_conn()
-    c = conn.cursor()
+    if USE_POSTGRES:
+        c = conn.cursor(cursor_factory=RealDictCursor)
+    else:
+        c = conn.cursor()
     c.execute(f"SELECT * FROM users WHERE username = {PLACEHOLDER}", (username,))
     row = c.fetchone()
     c.close()
     conn.close()
     return _row_to_dict(row)
+
 
 # ==================== تاریخچه ====================
 def add_history(from_id, to_id, amount, reason, tx_hash=""):
@@ -187,9 +214,13 @@ def add_history(from_id, to_id, amount, reason, tx_hash=""):
     c.close()
     conn.close()
 
+
 def get_history(telegram_id, limit=10):
     conn = get_conn()
-    c = conn.cursor()
+    if USE_POSTGRES:
+        c = conn.cursor(cursor_factory=RealDictCursor)
+    else:
+        c = conn.cursor()
     c.execute(f"""
         SELECT * FROM history
         WHERE from_id = {PLACEHOLDER} OR to_id = {PLACEHOLDER}
@@ -199,6 +230,7 @@ def get_history(telegram_id, limit=10):
     c.close()
     conn.close()
     return [_row_to_dict(r) for r in rows]
+
 
 # ==================== شرط‌بندی ====================
 def create_bet(title, player1_id, player2_id, amount):
