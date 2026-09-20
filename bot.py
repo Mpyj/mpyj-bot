@@ -47,7 +47,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🔙 برگشت", callback_data="back_to_start")]
         ]
         await query.edit_message_text(
-            "📖 **راهنمای Mpyj Coin**\n\n"
+            "📖 راهنمای Mpyj Coin\n\n"
             "━━━━━━━━━━━━━━━\n"
             "💰 موجودی — دیدن سکه‌هات\n"
             "📤 ارسال — فرستادن سکه\n"
@@ -57,8 +57,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📜 تاریخچه — تراکنش‌های اخیر\n"
             "━━━━━━━━━━━━━━━\n\n"
             "💡 همه تراکنش‌ها روی بلاک‌چین Sepolia ثبت میشن ✅",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown"
+            reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return
     
@@ -372,6 +371,10 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⚠️ عدد بفرست!")
             return
         
+        if amount <= 0:
+            await update.message.reply_text("⚠️ عدد باید بزرگتر از صفر باشه!")
+            return
+        
         action = context.user_data["admin_action"]
         target_id = context.user_data["admin_target"]
         target = get_user(target_id)
@@ -383,7 +386,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             tx_hash, error = send_tokens_from_owner(target["wallet_address"], amount)
             if error:
                 await update.message.reply_text(
-                    f"❌ خطا: {error}",
+                    f"❌ خطا:\n\n{error}",
                     reply_markup=ADMIN_MENU
                 )
             else:

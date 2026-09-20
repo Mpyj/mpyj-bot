@@ -2,7 +2,10 @@ from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from config import OWNER_TELEGRAM_ID
 from database import get_all_users, get_user
-from blockchain import get_balance, get_owner_eth_balance, reward_winner, send_tokens_from_owner
+from blockchain import (
+    get_balance, get_owner_eth_balance, get_owner_token_balance,
+    reward_winner, send_tokens_from_owner
+)
 from commands.helpers import format_number, ADMIN_MENU
 
 
@@ -16,11 +19,10 @@ async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     await update.message.reply_text(
-        "👑 **پنل ادمین Mpyj**\n\n"
+        "👑 پنل ادمین Mpyj\n\n"
         "━━━━━━━━━━━━━━━\n"
         "از منوی زیر انتخاب کن:",
-        reply_markup=ADMIN_MENU,
-        parse_mode="Markdown"
+        reply_markup=ADMIN_MENU
     )
 
 
@@ -33,14 +35,14 @@ async def show_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("😴 هنوز کسی عضو نشده!")
         return
     
-    text = f"👥 **لیست کاربران** ({len(users)} نفر)\n\n━━━━━━━━━━━━━━━\n"
+    text = f"👥 لیست کاربران ({len(users)} نفر)\n\n━━━━━━━━━━━━━━━\n"
     for u in users[:30]:
         name = u["first_name"] or u["username"] or f"کاربر {u['telegram_id']}"
         bal = get_balance(u["wallet_address"])
-        text += f"👤 **{name}**\n     💰 {format_number(bal)} MPYJ\n"
-        text += f"     🆔 `{u['telegram_id']}`\n\n"
+        text += f"👤 {name}\n     💰 {format_number(bal)} MPYJ\n"
+        text += f"     🆔 {u['telegram_id']}\n\n"
     
-    await update.message.reply_text(text, parse_mode="Markdown")
+    await update.message.reply_text(text)
 
 
 async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -63,19 +65,21 @@ async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
             richest = u
     
     eth_bal = get_owner_eth_balance()
+    token_bal = get_owner_token_balance()
     
-    text = f"📊 **آمار کلی Mpyj**\n\n"
+    text = f"📊 آمار کلی Mpyj\n\n"
     text += f"━━━━━━━━━━━━━━━\n"
-    text += f"👥 کاربران: **{total_users}**\n"
-    text += f"💰 مجموع سکه: **{format_number(total_coins)} MPYJ**\n"
+    text += f"👥 کاربران: {total_users}\n"
+    text += f"💰 مجموع سکه: {format_number(total_coins)} MPYJ\n"
     if richest:
         name = richest["first_name"] or richest["username"] or "ناشناس"
-        text += f"👑 ثروتمندترین: **{name}** ({format_number(max_bal)})\n"
+        text += f"👑 ثروتمندترین: {name} ({format_number(max_bal)})\n"
     text += f"━━━━━━━━━━━━━━━\n"
-    text += f"⛽ ETH کیف پول Owner: **{eth_bal:.4f}**\n"
+    text += f"⛽ ETH Owner: {eth_bal:.4f}\n"
+    text += f"🪙 MPYJ Owner: {format_number(token_bal)}\n"
     text += f"━━━━━━━━━━━━━━━"
     
-    await update.message.reply_text(text, parse_mode="Markdown")
+    await update.message.reply_text(text)
 
 
 async def start_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -90,8 +94,6 @@ async def start_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = []
     for u in users[:15]:
-        if u["telegram_id"] == OWNER_TELEGRAM_ID:
-            continue
         name = u["first_name"] or u["username"] or f"کاربر {u['telegram_id']}"
         keyboard.append([InlineKeyboardButton(
             f"🎁 {name}",
@@ -100,10 +102,9 @@ async def start_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard.append([InlineKeyboardButton("❌ لغو", callback_data="cancel_all")])
     
     await update.message.reply_text(
-        "🎁 **به کی جایزه بدم؟**\n\n"
+        "🎁 به کی جایزه بدم؟\n\n"
         "━━━━━━━━━━━━━━━",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="Markdown"
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 
@@ -132,11 +133,10 @@ async def choose_reward_amount(update: Update, context: ContextTypes.DEFAULT_TYP
     ]
     
     await query.edit_message_text(
-        f"🎁 **جایزه به {name}**\n\n"
+        f"🎁 جایزه به {name}\n\n"
         f"━━━━━━━━━━━━━━━\n"
         f"چقدر جایزه بدم؟",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="Markdown"
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 
@@ -146,6 +146,10 @@ async def start_add_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     users = get_all_users()
+    if not users:
+        await update.message.reply_text("😴 هنوز کسی عضو نشده!")
+        return
+    
     keyboard = []
     for u in users[:15]:
         name = u["first_name"] or u["username"] or f"کاربر {u['telegram_id']}"
@@ -156,9 +160,8 @@ async def start_add_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard.append([InlineKeyboardButton("❌ لغو", callback_data="cancel_all")])
     
     await update.message.reply_text(
-        "➕ **به کی سکه بدم؟**",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="Markdown"
+        "➕ به کی سکه بدم؟",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 
@@ -177,9 +180,8 @@ async def start_remove_balance(update: Update, context: ContextTypes.DEFAULT_TYP
     keyboard.append([InlineKeyboardButton("❌ لغو", callback_data="cancel_all")])
     
     await update.message.reply_text(
-        "➖ **از کی سکه کم کنم؟**",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="Markdown"
+        "➖ از کی سکه کم کنم؟",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 
@@ -188,8 +190,7 @@ async def start_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     context.user_data["broadcast_mode"] = True
     await update.message.reply_text(
-        "📢 **پیام همگانی**\n\n"
+        "📢 پیام همگانی\n\n"
         "متن پیام رو بنویس:\n"
-        "(یا /cancel بزن)",
-        parse_mode="Markdown"
+        "(یا /cancel بزن)"
     )
