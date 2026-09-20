@@ -3,6 +3,7 @@ from eth_account import Account
 from config import SEPOLIA_RPC, CONTRACT_ADDRESS, OWNER_PRIVATE_KEY, OWNER_WALLET
 import json
 import os
+import time
 
 # اتصال به شبکه
 w3 = Web3(Web3.HTTPProvider(SEPOLIA_RPC))
@@ -60,7 +61,6 @@ def is_member(address):
 def add_member_on_chain(member_address, starter_coins=0):
     """
     اضافه کردن کاربر به عنوان عضو روی بلاک‌چین
-    (قبل از اینکه بتونه توکن بگیره یا بفرسته)
     """
     contract = get_contract()
     if not contract:
@@ -117,7 +117,7 @@ def send_tokens_from_owner(to_address, amount):
         token_balance = contract.functions.balanceOf(account.address).call()
         print(f"🔍 Owner MPYJ: {token_balance}")
         
-        # ✅ چک کن که گیرنده عضو هست
+        # چک کن که گیرنده عضو هست
         member_status = contract.functions.isMember(
             Web3.to_checksum_address(to_address)
         ).call()
@@ -129,6 +129,8 @@ def send_tokens_from_owner(to_address, amount):
             if error:
                 return None, f"خطا در addMember: {error}"
             print(f"✅ User added as member")
+            # صبر کن تا تراکنش addMember تایید بشه
+            time.sleep(3)
         
         if token_balance < amount:
             return None, f"موجودی توکن Owner کافی نیست! ({token_balance} < {amount})"
@@ -136,9 +138,9 @@ def send_tokens_from_owner(to_address, amount):
         if eth_balance_ether < 0.001:
             return None, f"موجودی ETH Owner کافی نیست! ({eth_balance_ether})"
         
-        # ساخت تراکنش
+        # ✅ nonce رو تازه بخون
         nonce = w3.eth.get_transaction_count(account.address)
-        print(f"🔍 Nonce: {nonce}")
+        print(f"🔍 Nonce (fresh): {nonce}")
         
         # تخمین گس
         try:
@@ -202,6 +204,7 @@ def reward_winner(to_address, amount, reason):
             _, error = add_member_on_chain(to_address, 0)
             if error:
                 return None, f"خطا در addMember: {error}"
+            time.sleep(3)
         
         account = Account.from_key(OWNER_PRIVATE_KEY)
         nonce = w3.eth.get_transaction_count(account.address)
