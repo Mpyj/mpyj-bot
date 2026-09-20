@@ -44,6 +44,55 @@ def get_balance(address):
         print(f"❌ Balance error: {e}")
         return 0
 
+def is_member(address):
+    """چک کن که آدرس عضو قرارداد هست یا نه"""
+    contract = get_contract()
+    if not contract:
+        return False
+    try:
+        return contract.functions.isMember(
+            Web3.to_checksum_address(address)
+        ).call()
+    except Exception as e:
+        print(f"❌ isMember error: {e}")
+        return False
+
+def add_member_on_chain(member_address, starter_coins=0):
+    """
+    اضافه کردن کاربر به عنوان عضو روی بلاک‌چین
+    (قبل از اینکه بتونه توکن بگیره یا بفرسته)
+    """
+    contract = get_contract()
+    if not contract:
+        return None, "قرارداد پیدا نشد!"
+    try:
+        account = Account.from_key(OWNER_PRIVATE_KEY)
+        nonce = w3.eth.get_transaction_count(account.address)
+        
+        tx = contract.functions.addMember(
+            Web3.to_checksum_address(member_address), starter_coins
+        ).build_transaction({
+            "from": account.address,
+            "nonce": nonce,
+            "gas": 200000,
+            "gasPrice": w3.eth.gas_price,
+            "chainId": 11155111
+        })
+        
+        signed = w3.eth.account.sign_transaction(tx, OWNER_PRIVATE_KEY)
+        tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
+        tx_hash_hex = tx_hash.hex()
+        print(f"✅ addMember TX: {tx_hash_hex}")
+        
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+        if receipt.status != 1:
+            return None, "تراکنش addMember fail شد!"
+        
+        return tx_hash_hex, None
+    except Exception as e:
+        print(f"❌ addMember ERROR: {type(e).__name__}: {e}")
+        return None, f"{type(e).__name__}: {e}"
+
 def send_tokens_from_owner(to_address, amount):
     """
     ارسال توکن از کیف پول Owner به یه آدرس
@@ -67,6 +116,19 @@ def send_tokens_from_owner(to_address, amount):
         # چک موجودی توکن
         token_balance = contract.functions.balanceOf(account.address).call()
         print(f"🔍 Owner MPYJ: {token_balance}")
+        
+        # ✅ چک کن که گیرنده عضو هست
+        member_status = contract.functions.isMember(
+            Web3.to_checksum_address(to_address)
+        ).call()
+        print(f"🔍 Is member: {member_status}")
+        
+        if not member_status:
+            print(f"⚠️ User is not a member, adding...")
+            tx_hash, error = add_member_on_chain(to_address, 0)
+            if error:
+                return None, f"خطا در addMember: {error}"
+            print(f"✅ User added as member")
         
         if token_balance < amount:
             return None, f"موجودی توکن Owner کافی نیست! ({token_balance} < {amount})"
@@ -109,7 +171,6 @@ def send_tokens_from_owner(to_address, amount):
         tx_hash_hex = tx_hash.hex()
         print(f"✅ TX sent: {tx_hash_hex}")
         
-        # منتظر تایید
         receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
         print(f"✅ TX confirmed! Block: {receipt.blockNumber}, Status: {receipt.status}")
         
@@ -131,6 +192,17 @@ def reward_winner(to_address, amount, reason):
         print(f"🔍 === REWARD ===")
         print(f"🔍 To: {to_address}, Amount: {amount}, Reason: {reason}")
         
+        # چک کن که برنده عضو هست
+        member_status = contract.functions.isMember(
+            Web3.to_checksum_address(to_address)
+        ).call()
+        
+        if not member_status:
+            print(f"⚠️ Winner is not a member, adding...")
+            _, error = add_member_on_chain(to_address, 0)
+            if error:
+                return None, f"خطا در addMember: {error}"
+        
         account = Account.from_key(OWNER_PRIVATE_KEY)
         nonce = w3.eth.get_transaction_count(account.address)
         
@@ -149,7 +221,6 @@ def reward_winner(to_address, amount, reason):
         tx_hash_hex = tx_hash.hex()
         print(f"✅ Reward TX: {tx_hash_hex}")
         
-        # منتظر تایید
         receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
         print(f"✅ Reward confirmed! Status: {receipt.status}")
         
@@ -171,7 +242,6 @@ def get_owner_eth_balance():
         return 0
 
 def get_owner_token_balance():
-    """گرفتن موجودی توکن Owner"""
     contract = get_contract()
     if not contract:
         return 0
