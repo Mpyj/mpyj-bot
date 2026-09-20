@@ -1,202 +1,222 @@
-import sqlite3
 import os
-from config import DB_PATH
+from config import DATABASE_URL, USE_POSTGRES, DB_PATH
+from crypto_utils import encrypt, decrypt
 
-def init_db():
-    """ساخت جدول‌ها اگه وجود نداشته باشن"""
+# ==================== اتصال ====================
+if USE_POSTGRES:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    
+    def get_conn():
+        return psycopg2.connect(DATABASE_URL, sslmode="require")
+    
+    PLACEHOLDER = "%s"
+else:
+    import sqlite3
     os.makedirs("data", exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    
+    def get_conn():
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        return conn
+    
+    PLACEHOLDER = "?"
+
+# ==================== init ====================
+def init_db():
+    conn = get_conn()
     c = conn.cursor()
     
-    # جدول کاربران
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            telegram_id INTEGER PRIMARY KEY,
-            username TEXT,
-            first_name TEXT,
-            balance INTEGER DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    
-    # جدول شرط‌ها
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS bets (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT,
-            player1_id INTEGER,
-            player2_id INTEGER,
-            amount INTEGER,
-            winner_id INTEGER,
-            status TEXT DEFAULT 'pending',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    
-    # جدول تاریخچه تراکنش‌ها
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            from_id INTEGER,
-            to_id INTEGER,
-            amount INTEGER,
-            reason TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
+    if USE_POSTGRES:
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                telegram_id BIGINT PRIMARY KEY,
+                username TEXT,
+                first_name TEXT,
+                wallet_address TEXT,
+                encrypted_private_key TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS history (
+                id SERIAL PRIMARY KEY,
+                from_id BIGINT,
+                to_id BIGINT,
+                amount BIGINT,
+                reason TEXT,
+                tx_hash TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS bets (
+                id SERIAL PRIMARY KEY,
+                title TEXT,
+                player1_id BIGINT,
+                player2_id BIGINT,
+                amount BIGINT,
+                winner_id BIGINT,
+                status TEXT DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+    else:
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                telegram_id INTEGER PRIMARY KEY,
+                username TEXT,
+                first_name TEXT,
+                wallet_address TEXT,
+                encrypted_private_key TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                from_id INTEGER,
+                to_id INTEGER,
+                amount INTEGER,
+                reason TEXT,
+                tx_hash TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS bets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT,
+                player1_id INTEGER,
+                player2_id INTEGER,
+                amount INTEGER,
+                winner_id INTEGER,
+                status TEXT DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
     
     conn.commit()
+    c.close()
     conn.close()
 
-# ========== کاربران ==========
+# ==================== کاربران ====================
+def _row_to_dict(row):
+    if row is None:
+        return None
+    if USE_POSTGRES:
+        return dict(row)
+    return dict(row)
+
 def get_user(telegram_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     c = conn.cursor()
-    c.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,))
-    user = c.fetchone()
+    c.execute(f"SELECT * FROM users WHERE telegram_id = {PLACEHOLDER}", (telegram_id,))
+    row = c.fetchone()
+    c.close()
     conn.close()
-    return user
+    return _row_to_dict(row)
 
-def add_user(telegram_id, username, first_name=""):
-    conn = sqlite3.connect(DB_PATH)
+def add_user(telegram_id, username, first_name, wallet_address, private_key):
+    encrypted_key = encrypt(private_key)
+    conn = get_conn()
     c = conn.cursor()
     try:
-        c.execute("""
-            INSERT INTO users (telegram_id, username, first_name, balance)
-            VALUES (?, ?, ?, 0)
-        """, (telegram_id, username, first_name))
+        c.execute(f"""
+            INSERT INTO users (telegram_id, username, first_name, wallet_address, encrypted_private_key)
+            VALUES ({PLACEHOLDER}, {PLACEHOLDER}, {PLACEHOLDER}, {PLACEHOLDER}, {PLACEHOLDER})
+        """, (telegram_id, username, first_name, wallet_address, encrypted_key))
         conn.commit()
         return True
-    except sqlite3.IntegrityError:
+    except Exception:
+        conn.rollback()
         return False
     finally:
+        c.close()
         conn.close()
 
+def get_user_private_key(telegram_id):
+    user = get_user(telegram_id)
+    if user and user.get("encrypted_private_key"):
+        try:
+            return decrypt(user["encrypted_private_key"])
+        except Exception as e:
+            print(f"❌ Decrypt error: {e}")
+            return None
+    return None
+
 def get_all_users():
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     c = conn.cursor()
-    c.execute("SELECT telegram_id, username, first_name, balance FROM users")
-    users = c.fetchall()
+    c.execute("SELECT telegram_id, username, first_name, wallet_address FROM users")
+    rows = c.fetchall()
+    c.close()
     conn.close()
-    return users
+    return [_row_to_dict(r) for r in rows]
 
 def get_all_users_except(exclude_id):
-    """گرفتن همه کاربران به جز یه نفر"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     c = conn.cursor()
-    c.execute(
-        "SELECT telegram_id, username, first_name, balance FROM users WHERE telegram_id != ?",
-        (exclude_id,)
-    )
-    users = c.fetchall()
+    c.execute(f"""
+        SELECT telegram_id, username, first_name, wallet_address
+        FROM users WHERE telegram_id != {PLACEHOLDER}
+    """, (exclude_id,))
+    rows = c.fetchall()
+    c.close()
     conn.close()
-    return users
+    return [_row_to_dict(r) for r in rows]
 
 def get_user_by_username(username):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     c = conn.cursor()
-    c.execute("SELECT * FROM users WHERE username = ?", (username,))
-    user = c.fetchone()
+    c.execute(f"SELECT * FROM users WHERE username = {PLACEHOLDER}", (username,))
+    row = c.fetchone()
+    c.close()
     conn.close()
-    return user
+    return _row_to_dict(row)
 
-# ========== موجودی ==========
-def get_balance(telegram_id):
-    conn = sqlite3.connect(DB_PATH)
+# ==================== تاریخچه ====================
+def add_history(from_id, to_id, amount, reason, tx_hash=""):
+    conn = get_conn()
     c = conn.cursor()
-    c.execute("SELECT balance FROM users WHERE telegram_id = ?", (telegram_id,))
-    result = c.fetchone()
-    conn.close()
-    return result[0] if result else 0
-
-def update_balance(telegram_id, amount):
-    """اضافه یا کم کردن موجودی"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (amount, telegram_id))
+    c.execute(f"""
+        INSERT INTO history (from_id, to_id, amount, reason, tx_hash)
+        VALUES ({PLACEHOLDER}, {PLACEHOLDER}, {PLACEHOLDER}, {PLACEHOLDER}, {PLACEHOLDER})
+    """, (from_id, to_id, amount, reason, tx_hash))
     conn.commit()
+    c.close()
     conn.close()
 
-def transfer(from_id, to_id, amount, reason=""):
-    """انتقال سکه بین دو کاربر"""
-    from_balance = get_balance(from_id)
-    if from_balance < amount:
-        return False, "موجودی کافی نداری!"
-    
-    if not get_user(to_id):
-        return False, "کاربر مقصد پیدا نشد!"
-    
-    if amount <= 0:
-        return False, "مقدار باید بزرگتر از صفر باشه!"
-    
-    conn = sqlite3.connect(DB_PATH)
+def get_history(telegram_id, limit=10):
+    conn = get_conn()
     c = conn.cursor()
-    c.execute("UPDATE users SET balance = balance - ? WHERE telegram_id = ?", (amount, from_id))
-    c.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (amount, to_id))
-    c.execute(
-        "INSERT INTO history (from_id, to_id, amount, reason) VALUES (?, ?, ?, ?)",
-        (from_id, to_id, amount, reason)
-    )
-    conn.commit()
+    c.execute(f"""
+        SELECT * FROM history
+        WHERE from_id = {PLACEHOLDER} OR to_id = {PLACEHOLDER}
+        ORDER BY created_at DESC LIMIT {PLACEHOLDER}
+    """, (telegram_id, telegram_id, limit))
+    rows = c.fetchall()
+    c.close()
     conn.close()
-    return True, "موفق!"
+    return [_row_to_dict(r) for r in rows]
 
-def add_history(from_id, to_id, amount, reason):
-    """ثبت تراکنش تو تاریخچه"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute(
-        "INSERT INTO history (from_id, to_id, amount, reason) VALUES (?, ?, ?, ?)",
-        (from_id, to_id, amount, reason)
-    )
-    conn.commit()
-    conn.close()
-
-# ========== شرط‌بندی ==========
+# ==================== شرط‌بندی ====================
 def create_bet(title, player1_id, player2_id, amount):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     c = conn.cursor()
-    c.execute("""
-        INSERT INTO bets (title, player1_id, player2_id, amount)
-        VALUES (?, ?, ?, ?)
-    """, (title, player1_id, player2_id, amount))
-    bet_id = c.lastrowid
+    if USE_POSTGRES:
+        c.execute("""
+            INSERT INTO bets (title, player1_id, player2_id, amount)
+            VALUES (%s, %s, %s, %s) RETURNING id
+        """, (title, player1_id, player2_id, amount))
+        bet_id = c.fetchone()[0]
+    else:
+        c.execute("""
+            INSERT INTO bets (title, player1_id, player2_id, amount)
+            VALUES (?, ?, ?, ?)
+        """, (title, player1_id, player2_id, amount))
+        bet_id = c.lastrowid
     conn.commit()
+    c.close()
     conn.close()
     return bet_id
-
-def get_bet(bet_id):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT * FROM bets WHERE id = ?", (bet_id,))
-    bet = c.fetchone()
-    conn.close()
-    return bet
-
-def get_active_bets():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT * FROM bets WHERE status = 'pending'")
-    bets = c.fetchall()
-    conn.close()
-    return bets
-
-def update_bet_status(bet_id, status, winner_id=None):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("UPDATE bets SET status = ?, winner_id = ? WHERE id = ?", (status, winner_id, bet_id))
-    conn.commit()
-    conn.close()
-
-# ========== تاریخچه ==========
-def get_history(telegram_id, limit=10):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("""
-        SELECT * FROM history 
-        WHERE from_id = ? OR to_id = ? 
-        ORDER BY created_at DESC LIMIT ?
-    """, (telegram_id, telegram_id, limit))
-    history = c.fetchall()
-    conn.close()
-    return history

@@ -9,6 +9,8 @@ OWNER_WALLET = os.getenv("OWNER_WALLET", "")
 OWNER_PRIVATE_KEY = os.getenv("OWNER_PRIVATE_KEY", "")
 CONTRACT_ADDRESS = os.getenv("CONTRACT_ADDRESS", "")
 SEPOLIA_RPC = os.getenv("SEPOLIA_RPC", "https://rpc.sepolia.org")
+ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", "")
 
-# مسیر دیتابیس
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+USE_POSTGRES = bool(DATABASE_URL)
 DB_PATH = "data/mpyj.db"
