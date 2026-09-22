@@ -20,7 +20,8 @@ from commands.history import show_history
 from commands.send import start_send, choose_send_amount
 from commands.bet import (
     start_bet, choose_bet_amount, show_bet_amounts,
-    confirm_bet, execute_bet, settle_bet
+    confirm_bet, execute_bet, settle_bet,
+    accept_bet, reject_bet
 )
 from commands.dice import (
     start_dice, choose_dice_count, add_player_to_dice,
@@ -291,6 +292,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     elif data == "bet_do_confirm":
         await execute_bet(update, context)
+        return
+    
+    # ==================== قبول/رد شرط ====================
+    elif data.startswith("bet_accept_"):
+        await accept_bet(update, context)
+        return
+    
+    elif data.startswith("bet_reject_"):
+        await reject_bet(update, context)
         return
     
     # ==================== تعیین برنده ====================
