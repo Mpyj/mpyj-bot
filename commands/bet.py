@@ -1,13 +1,23 @@
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
-from database import get_all_users_except, get_user, create_bet, add_history, update_bet_status
+from database import (
+    get_all_users_except, get_user, create_bet,
+    add_history, get_bet, update_bet_status, get_pending_bets
+)
 from blockchain import get_balance, send_tokens_from_owner
 from commands.helpers import format_number
+from config import OWNER_TELEGRAM_ID
 
 
 async def start_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """شروع شرط‌بندی"""
     user_id = update.effective_user.id
+    user = get_user(user_id)
+    
+    if not user:
+        await update.message.reply_text("⚠️ اول /start بزن!")
+        return
+    
     users = get_all_users_except(user_id)
     
     if not users:
@@ -103,7 +113,10 @@ async def confirm_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     amount = context.user_data.get("bet_amount")
     target_id = context.user_data.get("bet_target")
     title = context.user_data.get("bet_title", "شرط")
-    user_id = query.from_user.id
+    
+    if not amount or not target_id:
+        await query.edit_message_text("❌ خطا! دوباره شروع کن.")
+        return
     
     target = get_user(target_id)
     name = target["first_name"] or target["username"] or "کاربر"
@@ -120,13 +133,13 @@ async def confirm_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👤 حریف: {name}\n"
         f"💰 مقدار: {amount} MPYJ\n"
         f"━━━━━━━━━━━━━━━\n\n"
-        f"⚠️ توجه: {amount} MPYJ از موجودی تو کم میشه!",
+        f"⚠️ {amount} MPYJ از موجودی تو قفل میشه!",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 
 async def execute_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """اجرای شرط"""
+    """اجرای شرط — تو همون چت (پیوی یا گروه)"""
     query = update.callback_query
     await query.answer()
     
@@ -135,13 +148,18 @@ async def execute_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     amount = context.user_data.get("bet_amount")
     title = context.user_data.get("bet_title", "شرط")
     
+    if not target_id or not amount:
+        await query.edit_message_text("❌ خطا! دوباره شروع کن.")
+        return
+    
     user = get_user(user_id)
     target = get_user(target_id)
     name = target["first_name"] or target["username"] or "کاربر"
+    user_name = user["first_name"] or user["username"] or "بازیکن ۱"
     
     await query.edit_message_text("⏳ در حال ثبت شرط...")
     
-    # چک موجودی
+    # چک موجودی هر دو طرف
     user_balance = get_balance(user["wallet_address"])
     target_balance = get_balance(target["wallet_address"])
     
@@ -149,23 +167,31 @@ async def execute_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             f"❌ موجودیت کافی نیست!\n💰 موجودی: {user_balance} MPYJ"
         )
+        context.user_data.clear()
         return
     
     if target_balance < amount:
         await query.edit_message_text(
             f"❌ موجودی {name} کافی نیست!\n💰 موجودی: {target_balance} MPYJ"
         )
+        context.user_data.clear()
         return
     
-    # ثبت شرط
+    # ثبت شرط تو دیتابیس
     bet_id = create_bet(title, user_id, target_id, amount)
     add_history(user_id, target_id, amount, "bet_created", "")
     
     # پیام نهایی با دکمه تعیین برنده
     keyboard = [
         [
-            InlineKeyboardButton(f"🏆 {user['first_name'] or 'بازیکن ۱'}", callback_data=f"settle_{bet_id}_1"),
-            InlineKeyboardButton(f"🏆 {name}", callback_data=f"settle_{bet_id}_2"),
+            InlineKeyboardButton(
+                f"🏆 {user_name}",
+                callback_data=f"settle_{bet_id}_1"
+            ),
+            InlineKeyboardButton(
+                f"🏆 {name}",
+                callback_data=f"settle_{bet_id}_2"
+            ),
         ]
     ]
     
@@ -174,10 +200,10 @@ async def execute_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"━━━━━━━━━━━━━━━\n"
         f"🎯 شماره: #{bet_id}\n"
         f"📝 {title}\n"
-        f"👤 {user['first_name'] or 'بازیکن ۱'} vs {name}\n"
+        f"👤 {user_name} vs {name}\n"
         f"💰 مقدار: {amount} MPYJ\n"
         f"━━━━━━━━━━━━━━━\n\n"
-        f"⚖️ هر کسی برنده شد، دکمه‌ش رو بزن:",
+        f"⚖️ ادمین، برنده رو انتخاب کن:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
     context.user_data.clear()
@@ -190,18 +216,15 @@ async def settle_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     user_id = query.from_user.id
     
-    # چک کن ادمین باشه
-    from config import OWNER_TELEGRAM_ID
+    # فقط ادمین
     if user_id != OWNER_TELEGRAM_ID:
         await query.answer("⛔ فقط ادمین می‌تونه برنده رو تعیین کنه!", show_alert=True)
         return
     
-    # settle_5_1  →  bet_id=5, winner=1
     parts = query.data.replace("settle_", "").split("_")
     bet_id = int(parts[0])
     winner_choice = int(parts[1])
     
-    from database import get_bet
     bet = get_bet(bet_id)
     
     if not bet:
@@ -228,7 +251,10 @@ async def settle_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tx_hash, error = send_tokens_from_owner(winner["wallet_address"], prize)
     
     if error:
-        await query.edit_message_text(f"❌ خطا: {error}")
+        await query.edit_message_text(
+            f"❌ خطا در پرداخت:\n\n{error}\n\n"
+            f"🆔 #{bet_id}"
+        )
         return
     
     # آپدیت دیتابیس
@@ -242,7 +268,7 @@ async def settle_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📝 {bet['title']}\n"
         f"🏆 برنده: {winner_name}\n"
         f"💔 باخت: {loser_name}\n"
-        f"💰 جایزه: {prize} MPYJ\n"
+        f"💰 جایزه: {format_number(prize)} MPYJ\n"
         f"━━━━━━━━━━━━━━━\n"
         f"🔗 {tx_hash[:30]}..."
     )

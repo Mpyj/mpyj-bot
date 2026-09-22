@@ -23,7 +23,7 @@ from commands.bet import (
     confirm_bet, execute_bet, settle_bet
 )
 from commands.dice import (
-    start_dice, choose_dice_count, add_dice_player as dice_add_player_handler,
+    start_dice, choose_dice_count, add_player_to_dice,
     dice_next, create_dice_message, roll_dice, dice_settle_winner
 )
 from commands.quests import show_quests, do_quest
@@ -189,7 +189,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     elif data.startswith("dice_add_"):
-        await dice_add_player_handler(update, context)
+        await add_player_to_dice(update, context)
         return
     
     elif data == "dice_next":

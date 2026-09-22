@@ -2,8 +2,10 @@ from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from database import (
     get_user, get_all_users_except, create_dice_game,
-    add_dice_player, get_dice_players, get_dice_game,
-    update_dice_value, update_dice_game_status, add_history
+    add_dice_player as db_add_dice_player,  # ← اینجا
+    get_dice_players, get_dice_game,
+    update_dice_value, update_dice_bet,
+    update_dice_game_status, add_history
 )
 from blockchain import get_balance, send_tokens_from_owner
 from commands.helpers import format_number
@@ -61,7 +63,7 @@ async def choose_dice_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ساخت بازی تو دیتابیس
     game_id = create_dice_game(user_id)
     context.user_data["dice_game_id"] = game_id
-    add_dice_player(game_id, user_id, 0)
+    db_add_dice_player(game_id, user_id, 0)  # ← اصلاح شد
     
     # لیست کاربران برای انتخاب
     users = get_all_users_except(user_id)
@@ -94,8 +96,8 @@ async def choose_dice_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def add_dice_player(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """اضافه کردن بازیکن به بازی"""
+async def add_player_to_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """اضافه کردن بازیکن به بازی (اسم تابع عوض شد)"""
     query = update.callback_query
     await query.answer()
     
@@ -115,7 +117,7 @@ async def add_dice_player(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     players.append(player_id)
     context.user_data["dice_players"] = players
-    add_dice_player(game_id, player_id, 0)
+    db_add_dice_player(game_id, player_id, 0)  # ← اصلاح شد
     
     # لیست به‌روز
     users = get_all_users_except(user_id)
@@ -160,6 +162,8 @@ async def dice_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✏️ عدد رو بنویس:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
+
+
 async def create_dice_message(update: Update, context: ContextTypes.DEFAULT_TYPE, amount):
     """ساخت پیام تاس تو چت"""
     user_id = update.effective_user.id
@@ -168,16 +172,7 @@ async def create_dice_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     # ذخیره مقدار
     for p in players:
-        from database import get_conn, PLACEHOLDER, USE_POSTGRES
-        conn = get_conn()
-        c = conn.cursor()
-        c.execute(f"""
-            UPDATE dice_players SET bet_amount = {PLACEHOLDER}
-            WHERE game_id = {PLACEHOLDER} AND user_id = {PLACEHOLDER}
-        """, (amount, game_id, p))
-        conn.commit()
-        c.close()
-        conn.close()
+        update_dice_bet(game_id, p, amount)  # ← از تابع جدید استفاده می‌کنیم
     
     # ساخت لیست نام‌ها
     names = []
@@ -268,27 +263,36 @@ async def roll_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     max_dice = max(r["dice"] for r in results)
     winners = [r for r in results if r["dice"] == max_dice]
     
-    text = "🎲 نتیجه تاس\n\n━━━━━━━━━━━━━━━\n"
+    # ساخت متن
+    dice_text = ""
     for r in results:
-        text += f"{DICE_EMOJIS[r['dice']]} {r['name']} → {r['dice']}\n"
-    text += "━━━━━━━━━━━━━━━\n\n"
+        dice_text += f"{DICE_EMOJIS[r['dice']]} {r['name']} → {r['dice']}\n"
     
     if len(winners) == 1:
         # برنده مشخصه
         winner = winners[0]
         total_prize = sum(r["bet"] for r in results)
         
-        text += f"🏆 برنده: {winner['name']} (عدد {max_dice})\n\n"
-        text += "⏳ در حال پرداخت جایزه..."
-        
-        await query.edit_message_text(text)
+        await query.edit_message_text(
+            f"🎲 نتیجه تاس\n\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"{dice_text}"
+            f"━━━━━━━━━━━━━━━\n\n"
+            f"🏆 برنده: {winner['name']}\n"
+            f"⏳ در حال پرداخت جایزه..."
+        )
         
         # ارسال جایزه
         tx_hash, error = send_tokens_from_owner(winner["wallet"], total_prize)
         
         if error:
             await query.edit_message_text(
-                text + f"\n\n❌ خطا در پرداخت: {error}"
+                f"🎲 نتیجه تاس\n\n"
+                f"━━━━━━━━━━━━━━━\n"
+                f"{dice_text}"
+                f"━━━━━━━━━━━━━━━\n\n"
+                f"🏆 برنده: {winner['name']}\n\n"
+                f"❌ خطا در پرداخت: {error}"
             )
             return
         
@@ -297,8 +301,8 @@ async def roll_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await query.edit_message_text(
             f"🎲 نتیجه تاس\n\n"
-            f"━━━━━━━━━━━━━━━\n" +
-            "".join([f"{DICE_EMOJIS[r['dice']]} {r['name']} → {r['dice']}\n" for r in results]) +
+            f"━━━━━━━━━━━━━━━\n"
+            f"{dice_text}"
             f"━━━━━━━━━━━━━━━\n\n"
             f"🏆 برنده: {winner['name']} (عدد {max_dice})\n"
             f"💰 جایزه: {format_number(total_prize)} MPYJ\n"
@@ -307,8 +311,15 @@ async def roll_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         # مساوی
         names = " و ".join([w["name"] for w in winners])
-        text += f"⚠️ مساوی! {len(winners)} نفر با عدد {max_dice}:\n{names}\n\n"
-        text += "⚖️ ادمین باید برنده رو انتخاب کنه."
+        text = (
+            f"🎲 نتیجه تاس\n\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"{dice_text}"
+            f"━━━━━━━━━━━━━━━\n\n"
+            f"⚠️ مساوی! {len(winners)} نفر با عدد {max_dice}:\n"
+            f"{names}\n\n"
+            f"⚖️ ادمین باید برنده رو انتخاب کنه."
+        )
         
         update_dice_game_status(game_id, "finished", None, max_dice)
         
@@ -336,7 +347,6 @@ async def dice_settle_winner(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.answer("⛔ فقط ادمین!", show_alert=True)
         return
     
-    # dice_winner_{game_id}_{winner_id}
     parts = query.data.replace("dice_winner_", "").split("_")
     game_id = int(parts[0])
     winner_id = int(parts[1])
