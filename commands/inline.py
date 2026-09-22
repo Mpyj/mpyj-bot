@@ -28,14 +28,14 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ])
             ),
             InlineQueryResultArticle(
-                id="help_leaderboard",
-                title="🏆 جدول رتبه‌ها",
-                description="ببین کی ثروتمندترینه",
+                id="help_send",
+                title="📤 ارسال سکه",
+                description="سکه به دوستانت بفرست",
                 input_message_content=InputTextMessageContent(
-                    "🏆 جدول رتبه‌بندی Mpyj\n\nبرای دیدن، روی دکمه بزن 👇"
+                    "📤 برای ارسال سکه، روی دکمه زیر بزن 👇"
                 ),
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🏆 نمایش رتبه‌ها", callback_data="inline_leaderboard")]
+                    [InlineKeyboardButton("📤 ارسال سکه", url="https://t.me/crypppttttoooobot")]
                 ])
             ),
             InlineQueryResultArticle(
@@ -58,6 +58,17 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ),
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("📖 راهنمای کامل", callback_data="help_dice")]
+                ])
+            ),
+            InlineQueryResultArticle(
+                id="help_leaderboard",
+                title="🏆 جدول رتبه‌ها",
+                description="ببین کی ثروتمندترینه",
+                input_message_content=InputTextMessageContent(
+                    "🏆 جدول رتبه‌بندی Mpyj\n\nبرای دیدن، روی دکمه بزن 👇"
+                ),
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🏆 نمایش رتبه‌ها", callback_data="inline_leaderboard")]
                 ])
             ),
         ]
@@ -112,6 +123,63 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.inline_query.answer(results, cache_time=5)
         return
     
+    # ==================== send ====================
+    if query == "send":
+        results = [InlineQueryResultArticle(
+            id="send",
+            title="📤 ارسال سکه",
+            description="برای ارسال، ربات رو باز کن",
+            input_message_content=InputTextMessageContent(
+                "📤 ارسال سکه Mpyj\n\n"
+                "━━━━━━━━━━━━━━━\n"
+                "برای ارسال سکه به دوستانت،\n"
+                "روی دکمه زیر بزن 👇"
+            ),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📤 ارسال سکه", url="https://t.me/crypppttttoooobot")]
+            ])
+        )]
+        await update.inline_query.answer(results, cache_time=5)
+        return
+    
+    # ==================== bet ====================
+    if query == "bet":
+        results = [InlineQueryResultArticle(
+            id="bet",
+            title="🎲 شرط‌بندی",
+            description="راهنمای کامل شرط‌بندی",
+            input_message_content=InputTextMessageContent(
+                "🎲 شرط‌بندی Mpyj\n\n"
+                "━━━━━━━━━━━━━━━\n"
+                "برای دیدن راهنمای کامل،\n"
+                "روی دکمه زیر بزن 👇"
+            ),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📖 راهنمای کامل", callback_data="help_bet")]
+            ])
+        )]
+        await update.inline_query.answer(results, cache_time=5)
+        return
+    
+    # ==================== dice ====================
+    if query == "dice":
+        results = [InlineQueryResultArticle(
+            id="dice",
+            title="🎲 بازی تاس",
+            description="راهنمای کامل تاس",
+            input_message_content=InputTextMessageContent(
+                "🎲 بازی تاس Mpyj\n\n"
+                "━━━━━━━━━━━━━━━\n"
+                "برای دیدن راهنمای کامل،\n"
+                "روی دکمه زیر بزن 👇"
+            ),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📖 راهنمای کامل", callback_data="help_dice")]
+            ])
+        )]
+        await update.inline_query.answer(results, cache_time=5)
+        return
+    
     # ==================== leaderboard ====================
     if query in ["leaderboard", "top"]:
         users = get_all_users()
@@ -146,10 +214,13 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     results = [InlineQueryResultArticle(
         id="default",
         title="❓ دستور نامعتبر",
-        description="balance یا leaderboard",
+        description="balance, send, bet, dice, leaderboard",
         input_message_content=InputTextMessageContent(
             "❓ دستور نامعتبر!\n\n"
             "balance - موجودی\n"
+            "send - ارسال\n"
+            "bet - شرط‌بندی\n"
+            "dice - تاس\n"
             "leaderboard - رتبه‌ها"
         )
     )]
