@@ -1,7 +1,7 @@
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
-    CallbackQueryHandler, filters, ContextTypes
+    CallbackQueryHandler, InlineQueryHandler, filters, ContextTypes
 )
 from config import TELEGRAM_TOKEN, OWNER_TELEGRAM_ID
 from database import (
@@ -10,7 +10,7 @@ from database import (
     update_pending_reward_status
 )
 from blockchain import get_balance, send_tokens_from_owner, reward_winner
-from commands.helpers import MAIN_MENU, ADMIN_MENU, ADMIN_MAIN_MENU
+from commands.helpers import MAIN_MENU, ADMIN_MENU, ADMIN_MAIN_MENU, format_number
 from commands.start import start, create_account
 from commands.balance import show_balance
 from commands.profile import show_profile
@@ -21,6 +21,7 @@ from commands.send import start_send, choose_send_amount
 from commands.bet import start_bet, choose_bet_amount
 from commands.quests import show_quests, do_quest
 from commands.lottery import show_lottery, buy_ticket
+from commands.inline import inline_query
 from commands.admin import (
     show_admin_panel, show_users, show_stats,
     start_reward, choose_reward_amount,
@@ -107,6 +108,70 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ لغو شد.")
         await context.bot.send_message(
             chat_id=user_id, text="منو:", reply_markup=menu
+        )
+        return
+    
+    # ==================== Inline: موجودی ====================
+    elif data == "inline_balance":
+        user = get_user(user_id)
+        if not user:
+            await query.edit_message_text(
+                "⚠️ اول /start بزن!",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🚀 شروع", url="https://t.me/MpyjCoinBot")]
+                ])
+            )
+            return
+        
+        balance = get_balance(user["wallet_address"])
+        name = user["first_name"] or user["username"] or "کاربر"
+        
+        if balance < 100:
+            emoji = "🌱"
+        elif balance < 500:
+            emoji = "💪"
+        elif balance < 1000:
+            emoji = "🔥"
+        else:
+            emoji = "👑"
+        
+        await query.edit_message_text(
+            f"💰 موجودی در Mpyj Coin\n\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"👤 {name}\n"
+            f"{emoji} {format_number(balance)} MPYJ\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"📍 {user['wallet_address'][:10]}...",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 بروزرسانی", callback_data="inline_balance")],
+                [InlineKeyboardButton("📤 ارسال سکه", url="https://t.me/MpyjCoinBot")]
+            ])
+        )
+        return
+    
+    # ==================== Inline: رتبه‌ها ====================
+    elif data == "inline_leaderboard":
+        users = get_all_users()
+        balances = []
+        for u in users:
+            bal = get_balance(u["wallet_address"])
+            name = u["first_name"] or u["username"] or f"کاربر {u['telegram_id']}"
+            balances.append((name, bal))
+        
+        balances.sort(key=lambda x: x[1], reverse=True)
+        
+        text = "🏆 جدول رتبه‌بندی Mpyj\n\n━━━━━━━━━━━━━━━\n"
+        medals = ["🥇", "🥈", "🥉"]
+        for i, (name, bal) in enumerate(balances[:10]):
+            medal = medals[i] if i < 3 else f"{i+1}."
+            text += f"{medal} {name} → {format_number(bal)} MPYJ\n"
+        
+        await query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 بروزرسانی", callback_data="inline_leaderboard")],
+                [InlineKeyboardButton("📤 باز کردن ربات", url="https://t.me/MpyjCoinBot")]
+            ])
         )
         return
     
@@ -571,6 +636,7 @@ def main():
     app.add_handler(CommandHandler("admin", admin_command))
     app.add_handler(CommandHandler("cancel", cancel_command))
     app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(InlineQueryHandler(inline_query))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
     
     print("🤖 ربات Mpyj روشن شد!")
