@@ -18,7 +18,10 @@ from commands.leaderboard import show_leaderboard
 from commands.help import show_help
 from commands.history import show_history
 from commands.send import start_send, choose_send_amount
-from commands.bet import start_bet, choose_bet_amount
+from commands.bet import (
+    start_bet, choose_bet_amount, show_bet_amounts,
+    confirm_bet, execute_bet, settle_bet
+)
 from commands.quests import show_quests, do_quest
 from commands.lottery import show_lottery, buy_ticket
 from commands.inline import inline_query
@@ -26,7 +29,7 @@ from commands.admin import (
     show_admin_panel, show_users, show_stats,
     start_reward, choose_reward_amount,
     start_add_balance, start_remove_balance, start_broadcast,
-    show_pending_rewards
+    show_pending_rewards, show_pending_bets
 )
 
 
@@ -257,42 +260,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         amount = int(data.replace("bet_amt_", ""))
         context.user_data["bet_amount"] = amount
-        target_id = context.user_data["bet_target"]
-        target = get_user(target_id)
-        name = target["first_name"] or target["username"] or "کاربر"
-        keyboard = [[
-            InlineKeyboardButton("✅ ثبت شرط", callback_data="bet_confirm"),
-            InlineKeyboardButton("❌ لغو", callback_data="cancel_all"),
-        ]]
-        await query.edit_message_text(
-            f"🎲 تایید شرط\n\n"
-            f"━━━━━━━━━━━━━━━\n"
-            f"👤 حریف: {name}\n"
-            f"💰 مقدار: {amount} MPYJ\n"
-            f"━━━━━━━━━━━━━━━",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
+        await confirm_bet(update, context)
         return
     
-    elif data == "bet_confirm":
-        target_id = context.user_data.get("bet_target")
-        amount = context.user_data.get("bet_amount")
-        
-        bet_id = create_bet(f"Bet #{user_id}", user_id, target_id, amount)
-        target = get_user(target_id)
-        name = target["first_name"] or target["username"] or "کاربر"
-        
-        keyboard = [[InlineKeyboardButton("🔙 برگشت به منو", callback_data="cancel_all")]]
-        await query.edit_message_text(
-            f"✅ شرط ثبت شد!\n\n"
-            f"━━━━━━━━━━━━━━━\n"
-            f"🎯 شماره: #{bet_id}\n"
-            f"👤 حریف: {name}\n"
-            f"💰 مقدار: {amount} MPYJ\n"
-            f"━━━━━━━━━━━━━━━",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        context.user_data.clear()
+    elif data == "bet_do_confirm":
+        await execute_bet(update, context)
+        return
+    
+    # ==================== تعیین برنده ====================
+    elif data.startswith("settle_"):
+        await settle_bet(update, context)
         return
     
     # ==================== ادمین: جایزه ====================
@@ -432,6 +409,40 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user_id = update.effective_user.id
     
+    # ===== انتظار عنوان شرط =====
+    if context.user_data.get("bet_step") == "waiting_title":
+        context.user_data["bet_title"] = text
+        context.user_data["bet_step"] = None
+        
+        balance = get_balance(get_user(user_id)["wallet_address"])
+        target = get_user(context.user_data["bet_target"])
+        name = target["first_name"] or target["username"] or "کاربر"
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("💵 ۱۰", callback_data="bet_amt_10"),
+                InlineKeyboardButton("💵 ۵۰", callback_data="bet_amt_50"),
+                InlineKeyboardButton("💵 ۱۰۰", callback_data="bet_amt_100"),
+            ],
+            [
+                InlineKeyboardButton("💎 ۵۰۰", callback_data="bet_amt_500"),
+                InlineKeyboardButton("💎 ۱۰۰۰", callback_data="bet_amt_1000"),
+            ],
+            [InlineKeyboardButton("✏️ مقدار دلخواه", callback_data="bet_amt_custom")],
+            [InlineKeyboardButton("❌ لغو", callback_data="cancel_all")],
+        ]
+        
+        await update.message.reply_text(
+            f"🎲 شرط با {name}\n\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"📝 {text}\n"
+            f"💰 موجودی تو: {format_number(balance)} MPYJ\n"
+            f"━━━━━━━━━━━━━━━\n\n"
+            f"چقدر شرط می‌بندی؟",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+    
     # ===== انتظار مقدار دلخواه =====
     if "waiting_custom_amount" in context.user_data:
         try:
@@ -463,18 +474,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         elif mode == "bet":
             context.user_data["bet_amount"] = amount
-            target = get_user(context.user_data["bet_target"])
-            name = target["first_name"] or target["username"] or "کاربر"
-            keyboard = [[
-                InlineKeyboardButton("✅ ثبت شرط", callback_data="bet_confirm"),
-                InlineKeyboardButton("❌ لغو", callback_data="cancel_all"),
-            ]]
-            await update.message.reply_text(
-                f"🎲 تایید شرط\n\n"
-                f"👤 حریف: {name}\n"
-                f"💰 مقدار: {amount} MPYJ",
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
+            await confirm_bet(update, context)
         elif mode == "reward":
             context.user_data["reward_amount"] = amount
             target = get_user(context.user_data["reward_target"])
@@ -590,6 +590,9 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         elif text == "🎯 جوایز در انتظار":
             await show_pending_rewards(update, context)
+            return
+        elif text == "🎲 شرط‌های در انتظار":
+            await show_pending_bets(update, context)
             return
     
     # ===== منوی کاربری =====

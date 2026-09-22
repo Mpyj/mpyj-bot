@@ -3,7 +3,8 @@ from telegram.ext import ContextTypes
 from config import OWNER_TELEGRAM_ID
 from database import (
     get_all_users, get_user, get_all_pending_rewards,
-    get_pending_reward, update_pending_reward_status, add_history
+    get_pending_reward, update_pending_reward_status, add_history,
+    get_pending_bets, get_bet, update_bet_status
 )
 from blockchain import (
     get_balance, get_owner_eth_balance, get_owner_token_balance,
@@ -70,6 +71,7 @@ async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     eth_bal = get_owner_eth_balance()
     token_bal = get_owner_token_balance()
     pending = get_all_pending_rewards()
+    pending_bets = get_pending_bets()
     
     text = f"📊 آمار کلی Mpyj\n\n"
     text += f"━━━━━━━━━━━━━━━\n"
@@ -82,13 +84,14 @@ async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text += f"⛽ ETH Owner: {eth_bal:.4f}\n"
     text += f"🪙 MPYJ Owner: {format_number(token_bal)}\n"
     text += f"🎁 جوایز در انتظار: {len(pending)}\n"
+    text += f"🎲 شرط‌های در انتظار: {len(pending_bets)}\n"
     text += f"━━━━━━━━━━━━━━━"
     
     await update.message.reply_text(text)
 
 
+# ==================== جوایز در انتظار ====================
 async def show_pending_rewards(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """نمایش جوایز در انتظار تایید (فقط ادمین)"""
     if not is_owner(update.effective_user.id):
         return
     
@@ -127,8 +130,50 @@ async def show_pending_rewards(update: Update, context: ContextTypes.DEFAULT_TYP
     )
 
 
+# ==================== شرط‌های در انتظار ====================
+async def show_pending_bets(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_owner(update.effective_user.id):
+        return
+    
+    bets = get_pending_bets()
+    
+    if not bets:
+        await update.message.reply_text(
+            "🎲 شرط‌های در انتظار\n\n"
+            "━━━━━━━━━━━━━━━\n"
+            "هیچ شرطی در انتظار نیست!"
+        )
+        return
+    
+    text = f"🎲 شرط‌های در انتظار ({len(bets)} مورد)\n\n━━━━━━━━━━━━━━━\n"
+    
+    keyboard = []
+    for b in bets[:10]:
+        p1 = get_user(b["player1_id"])
+        p2 = get_user(b["player2_id"])
+        n1 = p1["first_name"] or p1["username"] or "کاربر"
+        n2 = p2["first_name"] or p2["username"] or "کاربر"
+        
+        text += f"🆔 #{b['id']}\n"
+        text += f"📝 {b['title']}\n"
+        text += f"👤 {n1} vs {n2}\n"
+        text += f"💰 {b['amount']} MPYJ\n\n"
+        
+        keyboard.append([
+            InlineKeyboardButton(f"🏆 {n1}", callback_data=f"settle_{b['id']}_1"),
+            InlineKeyboardButton(f"🏆 {n2}", callback_data=f"settle_{b['id']}_2"),
+        ])
+    
+    text += "━━━━━━━━━━━━━━━"
+    
+    await update.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+# ==================== جایزه دادن ====================
 async def start_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """شروع جایزه دادن به برنده"""
     if not is_owner(update.effective_user.id):
         return
     
@@ -185,6 +230,7 @@ async def choose_reward_amount(update: Update, context: ContextTypes.DEFAULT_TYP
     )
 
 
+# ==================== افزایش/کاهش ====================
 async def start_add_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_owner(update.effective_user.id):
         return
@@ -229,6 +275,7 @@ async def start_remove_balance(update: Update, context: ContextTypes.DEFAULT_TYP
     )
 
 
+# ==================== پیام همگانی ====================
 async def start_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_owner(update.effective_user.id):
         return

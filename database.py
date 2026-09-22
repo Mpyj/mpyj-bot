@@ -302,6 +302,44 @@ def create_bet(title, player1_id, player2_id, amount):
     return bet_id
 
 
+def get_bet(bet_id):
+    conn = get_conn()
+    if USE_POSTGRES:
+        c = conn.cursor(cursor_factory=RealDictCursor)
+    else:
+        c = conn.cursor()
+    c.execute(f"SELECT * FROM bets WHERE id = {PLACEHOLDER}", (bet_id,))
+    row = c.fetchone()
+    c.close()
+    conn.close()
+    return _row_to_dict(row)
+
+
+def get_pending_bets():
+    conn = get_conn()
+    if USE_POSTGRES:
+        c = conn.cursor(cursor_factory=RealDictCursor)
+    else:
+        c = conn.cursor()
+    c.execute("SELECT * FROM bets WHERE status = 'pending' ORDER BY created_at DESC")
+    rows = c.fetchall()
+    c.close()
+    conn.close()
+    return [_row_to_dict(r) for r in rows]
+
+
+def update_bet_status(bet_id, status, winner_id=None):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(f"""
+        UPDATE bets SET status = {PLACEHOLDER}, winner_id = {PLACEHOLDER}
+        WHERE id = {PLACEHOLDER}
+    """, (status, winner_id, bet_id))
+    conn.commit()
+    c.close()
+    conn.close()
+
+
 # ==================== جوایز در انتظار ====================
 def create_pending_reward(user_id, amount, reason):
     conn = get_conn()
@@ -407,16 +445,10 @@ def buy_lottery_ticket(user_id):
     conn = get_conn()
     c = conn.cursor()
     
-    if USE_POSTGRES:
-        c.execute(f"""
-            SELECT * FROM lottery_tickets 
-            WHERE user_id = {PLACEHOLDER} AND week_number = {PLACEHOLDER}
-        """, (user_id, week))
-    else:
-        c.execute(f"""
-            SELECT * FROM lottery_tickets 
-            WHERE user_id = {PLACEHOLDER} AND week_number = {PLACEHOLDER}
-        """, (user_id, week))
+    c.execute(f"""
+        SELECT * FROM lottery_tickets 
+        WHERE user_id = {PLACEHOLDER} AND week_number = {PLACEHOLDER}
+    """, (user_id, week))
     
     if c.fetchone():
         c.close()
