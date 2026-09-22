@@ -157,6 +157,77 @@ async def confirm_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
 
 
+async def execute_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """اجرای شرط — تو همون چت (پیوی یا گروه)"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    target_id = context.user_data.get("bet_target")
+    amount = context.user_data.get("bet_amount")
+    title = context.user_data.get("bet_title", "شرط")
+    
+    if not target_id or not amount:
+        await query.edit_message_text("❌ خطا! دوباره شروع کن.")
+        return
+    
+    user = get_user(user_id)
+    target = get_user(target_id)
+    name = target["first_name"] or target["username"] or "کاربر"
+    user_name = user["first_name"] or user["username"] or "بازیکن ۱"
+    
+    await query.edit_message_text("⏳ در حال ثبت شرط...")
+    
+    # چک موجودی هر دو طرف
+    user_balance = get_balance(user["wallet_address"])
+    target_balance = get_balance(target["wallet_address"])
+    
+    if user_balance < amount:
+        await query.edit_message_text(
+            f"❌ موجودیت کافی نیست!\n💰 موجودی: {user_balance} MPYJ"
+        )
+        context.user_data.clear()
+        return
+    
+    if target_balance < amount:
+        await query.edit_message_text(
+            f"❌ موجودی {name} کافی نیست!\n💰 موجودی: {target_balance} MPYJ"
+        )
+        context.user_data.clear()
+        return
+    
+    # ثبت شرط تو دیتابیس
+    bet_id = create_bet(title, user_id, target_id, amount)
+    add_history(user_id, target_id, amount, "bet_created", "")
+    
+    # پیام نهایی با دکمه تعیین برنده
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                f"🏆 {user_name}",
+                callback_data=f"settle_{bet_id}_1"
+            ),
+            InlineKeyboardButton(
+                f"🏆 {name}",
+                callback_data=f"settle_{bet_id}_2"
+            ),
+        ]
+    ]
+    
+    await query.edit_message_text(
+        f"✅ شرط ثبت شد!\n\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"🎯 شماره: #{bet_id}\n"
+        f"📝 {title}\n"
+        f"👤 {user_name} vs {name}\n"
+        f"💰 مقدار: {amount} MPYJ\n"
+        f"━━━━━━━━━━━━━━━\n\n"
+        f"⚖️ ادمین، برنده رو انتخاب کن:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+    context.user_data.clear()
+
+
 async def accept_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """قبول شرط توسط حریف"""
     query = update.callback_query
