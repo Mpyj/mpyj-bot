@@ -10,12 +10,15 @@ from config import OWNER_TELEGRAM_ID
 
 
 async def start_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """شروع شرط‌بندی"""
+    """شروع شرط‌بندی — تو پیوی یا گروه"""
     user_id = update.effective_user.id
     user = get_user(user_id)
     
     if not user:
-        await update.message.reply_text("⚠️ اول /start بزن!")
+        await update.message.reply_text(
+            "⚠️ اول باید تو پیوی ربات /start بزنی!\n\n"
+            "👉 @MpyjCoinBot"
+        )
         return
     
     users = get_all_users_except(user_id)
@@ -26,6 +29,7 @@ async def start_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     context.user_data.clear()
     context.user_data["bet_step"] = "choose_opponent"
+    context.user_data["bet_chat_id"] = update.effective_chat.id
     
     keyboard = []
     for u in users[:15]:
