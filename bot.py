@@ -22,6 +22,10 @@ from commands.bet import (
     start_bet, choose_bet_amount, show_bet_amounts,
     confirm_bet, execute_bet, settle_bet
 )
+from commands.dice import (
+    start_dice, choose_dice_count, add_dice_player as dice_add_player_handler,
+    dice_next, create_dice_message, roll_dice, dice_settle_winner
+)
 from commands.quests import show_quests, do_quest
 from commands.lottery import show_lottery, buy_ticket
 from commands.inline import inline_query
@@ -60,6 +64,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "💰 موجودی — دیدن سکه‌هات\n"
             "📤 ارسال — فرستادن سکه\n"
             "🎲 شرط‌بندی — شرط با دوستان\n"
+            "🎲 تاس — بازی تاس\n"
             "🏆 رتبه‌ها — جدول امتیازات\n"
             "🎯 ماموریت‌ها — انجام ماموریت\n"
             "🎰 لاتاری — شانس بردن جایزه\n"
@@ -176,6 +181,27 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("📤 باز کردن ربات", url="https://t.me/MpyjCoinBot")]
             ])
         )
+        return
+    
+    # ==================== 🎲 تاس ====================
+    elif data.startswith("dice_count_"):
+        await choose_dice_count(update, context)
+        return
+    
+    elif data.startswith("dice_add_"):
+        await dice_add_player_handler(update, context)
+        return
+    
+    elif data == "dice_next":
+        await dice_next(update, context)
+        return
+    
+    elif data.startswith("dice_roll_"):
+        await roll_dice(update, context)
+        return
+    
+    elif data.startswith("dice_winner_"):
+        await dice_settle_winner(update, context)
         return
     
     # ==================== ماموریت‌ها ====================
@@ -409,6 +435,21 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user_id = update.effective_user.id
     
+    # ===== انتظار مقدار تاس =====
+    if context.user_data.get("dice_step") == "waiting_amount":
+        try:
+            amount = int(text)
+        except:
+            await update.message.reply_text("⚠️ عدد بفرست!")
+            return
+        
+        if amount <= 0:
+            await update.message.reply_text("⚠️ عدد باید بزرگتر از صفر باشه!")
+            return
+        
+        await create_dice_message(update, context, amount)
+        return
+    
     # ===== انتظار عنوان شرط =====
     if context.user_data.get("bet_step") == "waiting_title":
         context.user_data["bet_title"] = text
@@ -602,6 +643,8 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await start_send(update, context)
     elif text == "🎲 شرط‌بندی":
         await start_bet(update, context)
+    elif text == "🎲 تاس":
+        await start_dice(update, context)
     elif text == "🏆 رتبه‌ها":
         await show_leaderboard(update, context)
     elif text == "🎯 ماموریت‌ها":
@@ -637,6 +680,7 @@ def main():
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin_command))
+    app.add_handler(CommandHandler("dice", start_dice))
     app.add_handler(CommandHandler("cancel", cancel_command))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(InlineQueryHandler(inline_query))

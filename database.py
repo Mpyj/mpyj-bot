@@ -89,6 +89,26 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS dice_games (
+                id SERIAL PRIMARY KEY,
+                creator_id BIGINT,
+                status TEXT DEFAULT 'waiting',
+                winner_id BIGINT,
+                dice_value INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS dice_players (
+                id SERIAL PRIMARY KEY,
+                game_id INTEGER,
+                user_id BIGINT,
+                bet_amount BIGINT DEFAULT 0,
+                dice_value INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
     else:
         c.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -147,6 +167,26 @@ def init_db():
                 user_id INTEGER,
                 ticket_number INTEGER,
                 week_number INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS dice_games (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                creator_id INTEGER,
+                status TEXT DEFAULT 'waiting',
+                winner_id INTEGER,
+                dice_value INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS dice_players (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                game_id INTEGER,
+                user_id INTEGER,
+                bet_amount INTEGER DEFAULT 0,
+                dice_value INTEGER,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -482,3 +522,100 @@ def get_lottery_participants():
     c.close()
     conn.close()
     return [_row_to_dict(r) for r in rows]
+
+
+# ==================== تاس ====================
+def create_dice_game(creator_id):
+    conn = get_conn()
+    c = conn.cursor()
+    if USE_POSTGRES:
+        c.execute("INSERT INTO dice_games (creator_id) VALUES (%s) RETURNING id", (creator_id,))
+        game_id = c.fetchone()[0]
+    else:
+        c.execute("INSERT INTO dice_games (creator_id) VALUES (?)", (creator_id,))
+        game_id = c.lastrowid
+    conn.commit()
+    c.close()
+    conn.close()
+    return game_id
+
+
+def get_dice_game(game_id):
+    conn = get_conn()
+    if USE_POSTGRES:
+        c = conn.cursor(cursor_factory=RealDictCursor)
+    else:
+        c = conn.cursor()
+    c.execute(f"SELECT * FROM dice_games WHERE id = {PLACEHOLDER}", (game_id,))
+    row = c.fetchone()
+    c.close()
+    conn.close()
+    return _row_to_dict(row)
+
+
+def add_dice_player(game_id, user_id, bet_amount=0):
+    conn = get_conn()
+    c = conn.cursor()
+    try:
+        c.execute(f"""
+            INSERT INTO dice_players (game_id, user_id, bet_amount)
+            VALUES ({PLACEHOLDER}, {PLACEHOLDER}, {PLACEHOLDER})
+        """, (game_id, user_id, bet_amount))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"❌ add_dice_player: {e}")
+        conn.rollback()
+        return False
+    finally:
+        c.close()
+        conn.close()
+
+
+def get_dice_players(game_id):
+    conn = get_conn()
+    if USE_POSTGRES:
+        c = conn.cursor(cursor_factory=RealDictCursor)
+    else:
+        c = conn.cursor()
+    c.execute(f"SELECT * FROM dice_players WHERE game_id = {PLACEHOLDER}", (game_id,))
+    rows = c.fetchall()
+    c.close()
+    conn.close()
+    return [_row_to_dict(r) for r in rows]
+
+
+def update_dice_value(game_id, user_id, dice_value):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(f"""
+        UPDATE dice_players SET dice_value = {PLACEHOLDER}
+        WHERE game_id = {PLACEHOLDER} AND user_id = {PLACEHOLDER}
+    """, (dice_value, game_id, user_id))
+    conn.commit()
+    c.close()
+    conn.close()
+
+
+def update_dice_bet(game_id, user_id, bet_amount):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(f"""
+        UPDATE dice_players SET bet_amount = {PLACEHOLDER}
+        WHERE game_id = {PLACEHOLDER} AND user_id = {PLACEHOLDER}
+    """, (bet_amount, game_id, user_id))
+    conn.commit()
+    c.close()
+    conn.close()
+
+
+def update_dice_game_status(game_id, status, winner_id=None, dice_value=None):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(f"""
+        UPDATE dice_games SET status = {PLACEHOLDER}, winner_id = {PLACEHOLDER}, dice_value = {PLACEHOLDER}
+        WHERE id = {PLACEHOLDER}
+    """, (status, winner_id, dice_value, game_id))
+    conn.commit()
+    c.close()
+    conn.close()
