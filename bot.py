@@ -19,7 +19,7 @@ from commands.help import show_help
 from commands.history import show_history
 from commands.send import start_send, choose_send_amount
 from commands.bet import (
-    start_bet, choose_bet_amount, show_bet_amounts,
+    start_bet, choose_bet_amount,
     confirm_bet, execute_bet, settle_bet,
     accept_bet, reject_bet
 )
