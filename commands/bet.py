@@ -17,7 +17,7 @@ async def start_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not user:
         await update.message.reply_text(
             "⚠️ اول باید تو پیوی ربات /start بزنی!\n\n"
-            "👉 @MpyjCoinBot"
+            "👉 @crypppttttoooobot"
         )
         return
     
@@ -54,7 +54,6 @@ async def choose_bet_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     target_id = int(query.data.replace("bet_with_", ""))
-    user_id = query.from_user.id
     context.user_data["bet_target"] = target_id
     context.user_data["bet_step"] = "waiting_title"
     

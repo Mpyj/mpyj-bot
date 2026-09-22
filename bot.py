@@ -126,7 +126,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(
                 "⚠️ اول /start بزن!",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🚀 شروع", url="https://t.me/MpyjCoinBot")]
+                    [InlineKeyboardButton("🚀 شروع", url="https://t.me/crypppttttoooobot")]
                 ])
             )
             return
@@ -152,7 +152,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📍 {user['wallet_address'][:10]}...",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔄 بروزرسانی", callback_data="inline_balance")],
-                [InlineKeyboardButton("📤 ارسال سکه", url="https://t.me/MpyjCoinBot")]
+                [InlineKeyboardButton("📤 ارسال سکه", url="https://t.me/crypppttttoooobot")]
             ])
         )
         return
@@ -178,7 +178,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text,
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔄 بروزرسانی", callback_data="inline_leaderboard")],
-                [InlineKeyboardButton("📤 باز کردن ربات", url="https://t.me/MpyjCoinBot")]
+                [InlineKeyboardButton("📤 باز کردن ربات", url="https://t.me/crypppttttoooobot")]
             ])
         )
         return

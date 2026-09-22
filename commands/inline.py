@@ -3,7 +3,7 @@ from telegram import (
     InlineKeyboardMarkup, InlineKeyboardButton
 )
 from telegram.ext import ContextTypes
-from database import get_user, get_user_by_username, get_all_users
+from database import get_user, get_all_users
 from blockchain import get_balance
 from commands.helpers import format_number
 
@@ -28,28 +28,6 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ])
             ),
             InlineQueryResultArticle(
-                id="help_bet",
-                title="🎲 شرط‌بندی",
-                description="با دوستانت شرط ببند",
-                input_message_content=InputTextMessageContent(
-                    "🎲 برای شرط‌بندی، روی دکمه زیر بزن 👇"
-                ),
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🎲 شروع شرط‌بندی", url="https://t.me/crypppttttoooobot")]
-                ])
-            ),
-            InlineQueryResultArticle(
-                id="help_dice",
-                title="🎲 بازی تاس",
-                description="تاس بنداز و برنده شو",
-                input_message_content=InputTextMessageContent(
-                    "🎲 برای بازی تاس، روی دکمه زیر بزن 👇"
-                ),
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🎲 شروع تاس", url="https://t.me/crypppttttoooobot")]
-                ])
-            ),
-            InlineQueryResultArticle(
                 id="help_leaderboard",
                 title="🏆 جدول رتبه‌ها",
                 description="ببین کی ثروتمندترینه",
@@ -61,14 +39,25 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ])
             ),
             InlineQueryResultArticle(
-                id="help_send",
-                title="📤 ارسال سکه",
-                description="برای ارسال، از پیوی ربات استفاده کن",
+                id="help_bet",
+                title="🎲 شرط‌بندی",
+                description="تو گروه /bet بزن",
                 input_message_content=InputTextMessageContent(
-                    "📤 برای ارسال سکه، برو تو پیوی ربات 👇"
+                    "🎲 برای شرط‌بندی تو گروه، دستور /bet رو بزن 👇"
                 ),
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📤 باز کردن ربات", url="https://t.me/crypppttttoooobot")]
+                    [InlineKeyboardButton("📖 راهنما", url="https://t.me/crypppttttoooobot")]
+                ])
+            ),
+            InlineQueryResultArticle(
+                id="help_dice",
+                title="🎲 بازی تاس",
+                description="تو گروه /dice بزن",
+                input_message_content=InputTextMessageContent(
+                    "🎲 برای بازی تاس تو گروه، دستور /dice رو بزن 👇"
+                ),
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📖 راهنما", url="https://t.me/crypppttttoooobot")]
                 ])
             ),
         ]
@@ -123,44 +112,6 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.inline_query.answer(results, cache_time=5)
         return
     
-    # ==================== bet ====================
-    if query == "bet":
-        results = [InlineQueryResultArticle(
-            id="bet",
-            title="🎲 شروع شرط‌بندی",
-            description="برای شرط‌بندی، ربات رو باز کن",
-            input_message_content=InputTextMessageContent(
-                "🎲 شرط‌بندی Mpyj\n\n"
-                "━━━━━━━━━━━━━━━\n"
-                "برای شرط‌بندی با دوستانت،\n"
-                "روی دکمه زیر بزن 👇"
-            ),
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🎲 شروع شرط‌بندی", url="https://t.me/crypppttttoooobot")]
-            ])
-        )]
-        await update.inline_query.answer(results, cache_time=5)
-        return
-    
-    # ==================== dice ====================
-    if query == "dice":
-        results = [InlineQueryResultArticle(
-            id="dice",
-            title="🎲 شروع بازی تاس",
-            description="برای بازی تاس، ربات رو باز کن",
-            input_message_content=InputTextMessageContent(
-                "🎲 بازی تاس Mpyj\n\n"
-                "━━━━━━━━━━━━━━━\n"
-                "برای بازی تاس با دوستانت،\n"
-                "روی دکمه زیر بزن 👇"
-            ),
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🎲 شروع تاس", url="https://t.me/crypppttttoooobot")]
-            ])
-        )]
-        await update.inline_query.answer(results, cache_time=5)
-        return
-    
     # ==================== leaderboard ====================
     if query in ["leaderboard", "top"]:
         users = get_all_users()
@@ -195,14 +146,11 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     results = [InlineQueryResultArticle(
         id="default",
         title="❓ دستور نامعتبر",
-        description="balance, bet, dice, leaderboard",
+        description="balance یا leaderboard",
         input_message_content=InputTextMessageContent(
             "❓ دستور نامعتبر!\n\n"
-            "`balance` - موجودی\n"
-            "`bet` - شرط‌بندی\n"
-            "`dice` - تاس\n"
-            "`leaderboard` - رتبه‌ها",
-            parse_mode="Markdown"
+            "balance - موجودی\n"
+            "leaderboard - رتبه‌ها"
         )
     )]
     await update.inline_query.answer(results, cache_time=5)
