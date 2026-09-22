@@ -19,13 +19,14 @@ from commands.help import show_help
 from commands.history import show_history
 from commands.send import start_send, choose_send_amount
 from commands.bet import (
-    start_bet, choose_bet_amount,
+    start_bet, start_bet_from_callback, choose_bet_amount,
     confirm_bet, execute_bet, settle_bet,
     accept_bet, reject_bet
 )
 from commands.dice import (
-    start_dice, choose_dice_count, add_player_to_dice,
-    dice_next, create_dice_message, roll_dice, dice_settle_winner
+    start_dice, start_dice_from_callback, choose_dice_count,
+    add_player_to_dice, dice_next, create_dice_message,
+    roll_dice, dice_settle_winner
 )
 from commands.quests import show_quests, do_quest
 from commands.lottery import show_lottery, buy_ticket
@@ -56,25 +57,97 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # ==================== راهنما ====================
     elif data == "help":
+        try:
+            keyboard = [
+                [InlineKeyboardButton("🔙 برگشت", callback_data="back_to_start")]
+            ]
+            await query.edit_message_text(
+                "📖 راهنمای Mpyj Coin\n\n"
+                "━━━━━━━━━━━━━━━\n"
+                "💰 موجودی — دیدن سکه‌هات\n"
+                "📤 ارسال — فرستادن سکه\n"
+                "🎲 شرط‌بندی — شرط با دوستان\n"
+                "🎲 تاس — بازی تاس\n"
+                "🏆 رتبه‌ها — جدول امتیازات\n"
+                "🎯 ماموریت‌ها — انجام ماموریت\n"
+                "🎰 لاتاری — شانس بردن جایزه\n"
+                "👤 پروفایل — اطلاعات حساب\n"
+                "📜 تاریخچه — تراکنش‌های اخیر\n"
+                "━━━━━━━━━━━━━━━\n\n"
+                "💡 همه تراکنش‌ها روی بلاک‌چین Sepolia ثبت میشن ✅",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        except:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text="📖 راهنما:\n💰 موجودی\n📤 ارسال\n🎲 شرط‌بندی\n🎲 تاس\n🏆 رتبه‌ها\n🎯 ماموریت‌ها\n🎰 لاتاری\n👤 پروفایل\n📜 تاریخچه"
+            )
+        return
+    
+    # ==================== راهنمای شرط‌بندی ====================
+    elif data == "help_bet":
         keyboard = [
-            [InlineKeyboardButton("🔙 برگشت", callback_data="back_to_start")]
+            [InlineKeyboardButton("🎲 شروع شرط‌بندی", callback_data="start_bet_from_help")],
+            [InlineKeyboardButton("🔙 برگشت", callback_data="back_to_start")],
         ]
         await query.edit_message_text(
-            "📖 راهنمای Mpyj Coin\n\n"
+            "📖 راهنمای شرط‌بندی\n\n"
             "━━━━━━━━━━━━━━━\n"
-            "💰 موجودی — دیدن سکه‌هات\n"
-            "📤 ارسال — فرستادن سکه\n"
-            "🎲 شرط‌بندی — شرط با دوستان\n"
-            "🎲 تاس — بازی تاس\n"
-            "🏆 رتبه‌ها — جدول امتیازات\n"
-            "🎯 ماموریت‌ها — انجام ماموریت\n"
-            "🎰 لاتاری — شانس بردن جایزه\n"
-            "👤 پروفایل — اطلاعات حساب\n"
-            "📜 تاریخچه — تراکنش‌های اخیر\n"
+            "🎲 چطور شرط ببندم؟\n\n"
+            "1️⃣ تو پیوی ربات /bet بزن\n"
+            "2️⃣ حریفت رو انتخاب کن\n"
+            "3️⃣ عنوان شرط رو بنویس\n"
+            "   (مثلاً: بازی فیفا امشب)\n"
+            "4️⃣ مقدار شرط رو انتخاب کن\n"
+            "5️⃣ تایید کن\n\n"
+            "📩 بعدش ربات به حریفت پیام میده\n"
+            "✅ اگه قبول کرد، شرط ثبت میشه\n"
+            "❌ اگه رد کرد، شرط لغو میشه\n\n"
+            "🏆 بعد از مسابقه، ادمین برنده رو\n"
+            "انتخاب می‌کنه و جایزه واریز میشه\n\n"
+            "💰 جایزه: ۲ برابر مقدار شرط\n"
+            "   (از هر دو طرف کم میشه)\n"
             "━━━━━━━━━━━━━━━\n\n"
-            "💡 همه تراکنش‌ها روی بلاک‌چین Sepolia ثبت میشن ✅",
+            "💡 نکته: تو گروه هم می‌تونی\n"
+            "دستور /bet رو بزنی",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+        return
+    
+    # ==================== راهنمای تاس ====================
+    elif data == "help_dice":
+        keyboard = [
+            [InlineKeyboardButton("🎲 شروع تاس", callback_data="start_dice_from_help")],
+            [InlineKeyboardButton("🔙 برگشت", callback_data="back_to_start")],
+        ]
+        await query.edit_message_text(
+            "📖 راهنمای بازی تاس\n\n"
+            "━━━━━━━━━━━━━━━\n"
+            "🎲 چطور تاس بازی کنم؟\n\n"
+            "1️⃣ تو پیوی ربات /dice بزن\n"
+            "2️⃣ تعداد بازیکن‌ها رو انتخاب کن\n"
+            "   (۲ تا ۶ نفر)\n"
+            "3️⃣ بازیکن‌ها رو انتخاب کن\n"
+            "4️⃣ مقدار شرط رو بنویس\n"
+            "5️⃣ دکمه تاس رو بزن\n\n"
+            "🎲 ربات برای هر نفر یه عدد میندازه\n"
+            "🏆 هر کی عدد بالاتر بیاره، برنده‌ست\n"
+            "⚖️ اگه مساوی شد، ادمین تصمیم می‌گیره\n\n"
+            "💰 جایزه: مجموع شرط همه\n"
+            "━━━━━━━━━━━━━━━\n\n"
+            "💡 نکته: تو گروه هم می‌تونی\n"
+            "دستور /dice رو بزنی",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+    
+    # ==================== شروع از راهنما ====================
+    elif data == "start_bet_from_help":
+        await start_bet_from_callback(update, context)
+        return
+    
+    elif data == "start_dice_from_help":
+        await start_dice_from_callback(update, context)
         return
     
     # ==================== برگشت ====================
@@ -294,7 +367,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await execute_bet(update, context)
         return
     
-    # ==================== قبول/رد شرط ====================
     elif data.startswith("bet_accept_"):
         await accept_bet(update, context)
         return
@@ -303,7 +375,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await reject_bet(update, context)
         return
     
-    # ==================== تعیین برنده ====================
     elif data.startswith("settle_"):
         await settle_bet(update, context)
         return

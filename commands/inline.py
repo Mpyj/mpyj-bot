@@ -13,7 +13,7 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.inline_query.query.strip().lower()
     user_id = update.effective_user.id
     
-    # ==================== راهنما (وقتی خالیه) ====================
+    # ==================== راهنما ====================
     if not query:
         results = [
             InlineQueryResultArticle(
@@ -41,23 +41,23 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineQueryResultArticle(
                 id="help_bet",
                 title="🎲 شرط‌بندی",
-                description="تو گروه /bet بزن",
+                description="راهنمای کامل شرط‌بندی",
                 input_message_content=InputTextMessageContent(
-                    "🎲 برای شرط‌بندی تو گروه، دستور /bet رو بزن 👇"
+                    "🎲 شرط‌بندی Mpyj\n\nبرای دیدن راهنما، روی دکمه بزن 👇"
                 ),
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📖 راهنما", url="https://t.me/crypppttttoooobot")]
+                    [InlineKeyboardButton("📖 راهنمای کامل", callback_data="help_bet")]
                 ])
             ),
             InlineQueryResultArticle(
                 id="help_dice",
                 title="🎲 بازی تاس",
-                description="تو گروه /dice بزن",
+                description="راهنمای کامل تاس",
                 input_message_content=InputTextMessageContent(
-                    "🎲 برای بازی تاس تو گروه، دستور /dice رو بزن 👇"
+                    "🎲 بازی تاس Mpyj\n\nبرای دیدن راهنما، روی دکمه بزن 👇"
                 ),
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📖 راهنما", url="https://t.me/crypppttttoooobot")]
+                    [InlineKeyboardButton("📖 راهنمای کامل", callback_data="help_dice")]
                 ])
             ),
         ]

@@ -10,7 +10,7 @@ from config import OWNER_TELEGRAM_ID
 
 
 async def start_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """شروع شرط‌بندی"""
+    """شروع شرط‌بندی — از منوی Reply Keyboard"""
     user_id = update.effective_user.id
     user = get_user(user_id)
     
@@ -40,6 +40,44 @@ async def start_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard.append([InlineKeyboardButton("❌ لغو", callback_data="cancel_all")])
     
     await update.message.reply_text(
+        "🎲 شرط‌بندی\n\n"
+        "━━━━━━━━━━━━━━━\n"
+        "با کی می‌خوای شرط ببندی؟",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+async def start_bet_from_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """شروع شرط‌بندی — از Inline Button"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    user = get_user(user_id)
+    
+    if not user:
+        await query.edit_message_text("⚠️ اول /start بزن!")
+        return
+    
+    users = get_all_users_except(user_id)
+    
+    if not users:
+        await query.edit_message_text("😴 هنوز کاربر دیگه‌ای نیست!")
+        return
+    
+    context.user_data.clear()
+    context.user_data["bet_step"] = "choose_opponent"
+    
+    keyboard = []
+    for u in users[:15]:
+        name = u["first_name"] or u["username"] or f"کاربر {u['telegram_id']}"
+        keyboard.append([InlineKeyboardButton(
+            f"🎯 {name}",
+            callback_data=f"bet_with_{u['telegram_id']}"
+        )])
+    keyboard.append([InlineKeyboardButton("❌ لغو", callback_data="cancel_all")])
+    
+    await query.edit_message_text(
         "🎲 شرط‌بندی\n\n"
         "━━━━━━━━━━━━━━━\n"
         "با کی می‌خوای شرط ببندی؟",
@@ -106,11 +144,11 @@ async def confirm_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    # ذخیره اطلاعات تو context
+    # ذخیره اطلاعات
     context.user_data["bet_amount"] = amount
     context.user_data["bet_title"] = title
     
-    # ✅ ارسال درخواست به حریف
+    # ارسال درخواست به حریف
     keyboard = [
         [
             InlineKeyboardButton("✅ قبول", callback_data=f"bet_accept_{user_id}"),
@@ -138,7 +176,6 @@ async def confirm_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⏳ منتظر تایید {name} باش..."
         )
         
-        # ذخیره اطلاعات برای وقتی که حریف قبول کرد
         context.bot_data[f"bet_request_{user_id}"] = {
             "challenger_id": user_id,
             "challenger_name": user_name,
@@ -178,7 +215,6 @@ async def execute_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_text("⏳ در حال ثبت شرط...")
     
-    # چک موجودی هر دو طرف
     user_balance = get_balance(user["wallet_address"])
     target_balance = get_balance(target["wallet_address"])
     
@@ -196,11 +232,9 @@ async def execute_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
         return
     
-    # ثبت شرط تو دیتابیس
     bet_id = create_bet(title, user_id, target_id, amount)
     add_history(user_id, target_id, amount, "bet_created", "")
     
-    # پیام نهایی با دکمه تعیین برنده
     keyboard = [
         [
             InlineKeyboardButton(
@@ -236,7 +270,6 @@ async def accept_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     challenger_id = int(query.data.replace("bet_accept_", ""))
     target_id = query.from_user.id
     
-    # گرفتن اطلاعات از bot_data
     request = context.bot_data.get(f"bet_request_{challenger_id}")
     
     if not request:
@@ -252,13 +285,11 @@ async def accept_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     challenger_name = challenger["first_name"] or challenger["username"] or "کاربر"
     target_name = target["first_name"] or target["username"] or "کاربر"
     
-    # ثبت شرط
     bet_id = create_bet(
         request["title"], challenger_id, target_id, request["amount"]
     )
     add_history(challenger_id, target_id, request["amount"], "bet_created", "")
     
-    # دکمه‌های تعیین برنده (برای ادمین)
     keyboard = [
         [
             InlineKeyboardButton(
@@ -284,24 +315,20 @@ async def accept_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
     
-    # اطلاع به چلنجر
     try:
         await context.bot.send_message(
             chat_id=challenger_id,
             text=(
                 f"✅ {target_name} شرط رو قبول کرد!\n\n"
-                f"━━━━━━━━━━━━━━━\n"
                 f"🎯 شرط #{bet_id}\n"
                 f"📝 {request['title']}\n"
-                f"💰 مقدار: {request['amount']} MPYJ\n"
-                f"━━━━━━━━━━━━━━━\n\n"
-                f"⏳ منتظر تعیین برنده توسط ادمین باش..."
+                f"💰 {request['amount']} MPYJ\n\n"
+                f"⏳ منتظر تعیین برنده باش..."
             )
         )
     except:
         pass
     
-    # پاک کردن درخواست
     context.bot_data.pop(f"bet_request_{challenger_id}", None)
 
 
@@ -328,7 +355,6 @@ async def reject_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💰 {request['amount']} MPYJ"
     )
     
-    # اطلاع به چلنجر
     try:
         await context.bot.send_message(
             chat_id=challenger_id,
@@ -402,7 +428,6 @@ async def settle_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🔗 {tx_hash[:30]}..."
     )
     
-    # اطلاع به برنده و بازنده
     try:
         await context.bot.send_message(
             chat_id=winner_id,

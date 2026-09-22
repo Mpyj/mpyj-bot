@@ -2,7 +2,7 @@ from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from database import (
     get_user, get_all_users_except, create_dice_game,
-    add_dice_player as db_add_dice_player,  # ← اینجا
+    add_dice_player as db_add_dice_player,
     get_dice_players, get_dice_game,
     update_dice_value, update_dice_bet,
     update_dice_game_status, add_history
@@ -15,7 +15,7 @@ DICE_EMOJIS = {1: "⚀", 2: "⚁", 3: "⚂", 4: "⚃", 5: "⚄", 6: "⚅"}
 
 
 async def start_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """شروع بازی تاس"""
+    """شروع بازی تاس — از منوی Reply Keyboard"""
     user_id = update.effective_user.id
     user = get_user(user_id)
     
@@ -49,6 +49,44 @@ async def start_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def start_dice_from_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """شروع بازی تاس — از Inline Button"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    user = get_user(user_id)
+    
+    if not user:
+        await query.edit_message_text("⚠️ اول /start بزن!")
+        return
+    
+    context.user_data.clear()
+    
+    keyboard = [
+        [
+            InlineKeyboardButton("👥 ۲ نفر", callback_data="dice_count_2"),
+            InlineKeyboardButton("👥 ۳ نفر", callback_data="dice_count_3"),
+        ],
+        [
+            InlineKeyboardButton("👥 ۴ نفر", callback_data="dice_count_4"),
+            InlineKeyboardButton("👥 ۵ نفر", callback_data="dice_count_5"),
+        ],
+        [
+            InlineKeyboardButton("👥 ۶ نفر", callback_data="dice_count_6"),
+        ],
+        [InlineKeyboardButton("❌ لغو", callback_data="cancel_all")],
+    ]
+    
+    await query.edit_message_text(
+        "🎲 بازی تاس\n\n"
+        "━━━━━━━━━━━━━━━\n"
+        "چند نفر بازی می‌کنن؟\n\n"
+        "💡 حداقل ۲، حداکثر ۶ نفر",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
 async def choose_dice_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """انتخاب تعداد بازیکن‌ها"""
     query = update.callback_query
@@ -60,12 +98,10 @@ async def choose_dice_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["dice_count"] = count
     context.user_data["dice_players"] = [user_id]
     
-    # ساخت بازی تو دیتابیس
     game_id = create_dice_game(user_id)
     context.user_data["dice_game_id"] = game_id
-    db_add_dice_player(game_id, user_id, 0)  # ← اصلاح شد
+    db_add_dice_player(game_id, user_id, 0)
     
-    # لیست کاربران برای انتخاب
     users = get_all_users_except(user_id)
     
     if not users:
@@ -97,7 +133,7 @@ async def choose_dice_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def add_player_to_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """اضافه کردن بازیکن به بازی (اسم تابع عوض شد)"""
+    """اضافه کردن بازیکن به بازی"""
     query = update.callback_query
     await query.answer()
     
@@ -117,9 +153,8 @@ async def add_player_to_dice(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     players.append(player_id)
     context.user_data["dice_players"] = players
-    db_add_dice_player(game_id, player_id, 0)  # ← اصلاح شد
+    db_add_dice_player(game_id, player_id, 0)
     
-    # لیست به‌روز
     users = get_all_users_except(user_id)
     
     keyboard = []
@@ -170,11 +205,9 @@ async def create_dice_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     players = context.user_data.get("dice_players", [])
     game_id = context.user_data.get("dice_game_id")
     
-    # ذخیره مقدار
     for p in players:
-        update_dice_bet(game_id, p, amount)  # ← از تابع جدید استفاده می‌کنیم
+        update_dice_bet(game_id, p, amount)
     
-    # ساخت لیست نام‌ها
     names = []
     for p in players:
         u = get_user(p)
@@ -222,7 +255,6 @@ async def roll_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("⚠️ این بازی قبلاً تموم شده!")
         return
     
-    # فقط سازنده می‌تونه تاس بندازه
     if game["creator_id"] != user_id:
         await query.answer("⛔ فقط سازنده بازی!", show_alert=True)
         return
@@ -232,7 +264,6 @@ async def roll_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("⚠️ حداقل ۲ بازیکن لازمه!")
         return
     
-    # چک موجودی همه
     for p in players:
         user = get_user(p["user_id"])
         balance = get_balance(user["wallet_address"])
@@ -244,7 +275,6 @@ async def roll_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
     
-    # انداختن تاس برای هر نفر
     results = []
     for p in players:
         dice_value = random.randint(1, 6)
@@ -259,17 +289,14 @@ async def roll_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "wallet": user["wallet_address"]
         })
     
-    # پیدا کردن برنده
     max_dice = max(r["dice"] for r in results)
     winners = [r for r in results if r["dice"] == max_dice]
     
-    # ساخت متن
     dice_text = ""
     for r in results:
         dice_text += f"{DICE_EMOJIS[r['dice']]} {r['name']} → {r['dice']}\n"
     
     if len(winners) == 1:
-        # برنده مشخصه
         winner = winners[0]
         total_prize = sum(r["bet"] for r in results)
         
@@ -282,7 +309,6 @@ async def roll_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⏳ در حال پرداخت جایزه..."
         )
         
-        # ارسال جایزه
         tx_hash, error = send_tokens_from_owner(winner["wallet"], total_prize)
         
         if error:
@@ -309,7 +335,6 @@ async def roll_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🔗 {tx_hash[:30]}..."
         )
     else:
-        # مساوی
         names = " و ".join([w["name"] for w in winners])
         text = (
             f"🎲 نتیجه تاس\n\n"
@@ -323,7 +348,6 @@ async def roll_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         update_dice_game_status(game_id, "finished", None, max_dice)
         
-        # دکمه‌های انتخاب برنده برای ادمین
         keyboard = []
         for w in winners:
             keyboard.append([InlineKeyboardButton(
