@@ -12,6 +12,7 @@ from database import (
 from blockchain import get_balance, send_tokens_from_owner, reward_winner
 from commands.helpers import MAIN_MENU, ADMIN_MENU, ADMIN_MAIN_MENU, format_number
 from commands.start import start, create_account
+from commands.captcha import send_captcha, verify_captcha
 from commands.balance import show_balance
 from commands.profile import show_profile
 from commands.leaderboard import show_leaderboard
@@ -50,8 +51,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_id = query.from_user.id
     
+    # ==================== کپچا ====================
+    if data.startswith("captcha_"):
+        await verify_captcha(update, context)
+        return
+    
     # ==================== ثبت‌نام ====================
-    if data == "create_account":
+    elif data == "create_account":
         await create_account(update, context)
         return
     
@@ -515,6 +521,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user_id = update.effective_user.id
+    chat_type = update.effective_chat.type
+    
+    # ✅ تو گروه‌ها فقط دستورات کار کنن
+    if chat_type in ["group", "supergroup"]:
+        if not text.startswith("/"):
+            return
+        if not any(cmd in text for cmd in ["/start", "/bet", "/dice", "/admin", "/cancel"]):
+            return
     
     # ===== انتظار مقدار تاس =====
     if context.user_data.get("dice_step") == "waiting_amount":

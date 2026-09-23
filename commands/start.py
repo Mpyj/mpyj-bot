@@ -24,27 +24,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=menu
         )
     else:
-        keyboard = [
-            [InlineKeyboardButton("🚀 ساخت کیف پول", callback_data="create_account")],
-            [InlineKeyboardButton("📖 راهنمای ربات", callback_data="help")]
-        ]
-        await update.message.reply_text(
-            f"🌟 سلام {user.first_name} عزیز!\n\n"
-            f"━━━━━━━━━━━━━━━\n"
-            f"💎 به Mpyj Coin خوش اومدی\n"
-            f"━━━━━━━━━━━━━━━\n\n"
-            f"🎁 یه اقتصاد سرگرمی بین دوستان\n"
-            f"🪙 توکن اختصاصی برند Mpyj\n"
-            f"🎲 شرط‌بندی و مسابقه\n\n"
-            f"برای شروع، یه کیف پول برات می‌سازیم 👇",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
+        # ✅ کاربر جدید → کپچا
+        from commands.captcha import send_captcha
+        await send_captcha(update, context)
 
 
 async def create_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user = query.from_user
+    
+    # ✅ چک کن کپچا پاس شده
+    if not context.user_data.get("captcha_passed"):
+        await query.edit_message_text(
+            "⚠️ اول باید کپچا رو رد کنی!\n\n"
+            "👉 /start رو بزن"
+        )
+        return
     
     # ساخت کیف پول
     wallet = create_wallet()
@@ -59,7 +55,7 @@ async def create_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("⚠️ قبلاً ثبت‌نام کردی!")
         return
     
-    # ✅ اضافه کردن به عنوان عضو روی بلاک‌چین
+    # اضافه کردن به عنوان عضو روی بلاک‌چین
     await query.edit_message_text("⏳ در حال ثبت نام روی بلاک‌چین...")
     
     tx_hash, error = add_member_on_chain(wallet["address"], 0)
@@ -80,6 +76,10 @@ async def create_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"💡 از مالک بخواه بهت سکه بده\n"
             f"🔗 {tx_hash[:30]}..."
         )
+    
+    # پاک کردن کپچا
+    context.user_data.pop("captcha_passed", None)
+    context.user_data.pop("captcha_answer", None)
     
     menu = ADMIN_MENU if user.id == OWNER_TELEGRAM_ID else MAIN_MENU
     await context.bot.send_message(
