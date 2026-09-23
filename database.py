@@ -36,6 +36,7 @@ def init_db():
                 first_name TEXT,
                 wallet_address TEXT,
                 encrypted_private_key TEXT,
+                last_captcha TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -117,6 +118,7 @@ def init_db():
                 first_name TEXT,
                 wallet_address TEXT,
                 encrypted_private_key TEXT,
+                last_captcha TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -288,6 +290,69 @@ def get_user_by_username(username):
     c.close()
     conn.close()
     return _row_to_dict(row)
+
+
+# ==================== کپچا ====================
+def update_last_captcha(telegram_id):
+    """ذخیره زمان آخرین کپچا"""
+    conn = get_conn()
+    c = conn.cursor()
+    if USE_POSTGRES:
+        c.execute(f"""
+            UPDATE users SET last_captcha = CURRENT_TIMESTAMP
+            WHERE telegram_id = {PLACEHOLDER}
+        """, (telegram_id,))
+    else:
+        c.execute(f"""
+            UPDATE users SET last_captcha = datetime('now')
+            WHERE telegram_id = {PLACEHOLDER}
+        """, (telegram_id,))
+    conn.commit()
+    c.close()
+    conn.close()
+
+
+def needs_captcha(telegram_id):
+    """چک کن کاربر نیاز به کپچا داره یا نه (۲۴ ساعت)"""
+    conn = get_conn()
+    if USE_POSTGRES:
+        c = conn.cursor(cursor_factory=RealDictCursor)
+        c.execute(f"""
+            SELECT last_captcha FROM users
+            WHERE telegram_id = {PLACEHOLDER}
+        """, (telegram_id,))
+    else:
+        c = conn.cursor()
+        c.execute(f"""
+            SELECT last_captcha FROM users
+            WHERE telegram_id = {PLACEHOLDER}
+        """, (telegram_id,))
+    row = c.fetchone()
+    c.close()
+    conn.close()
+    
+    if not row:
+        return True  # کاربر وجود نداره
+    
+    last = row["last_captcha"] if USE_POSTGRES else row[0]
+    
+    if last is None:
+        return True  # هیچ‌وقت کپچا نداده
+    
+    # چک کن ۲۴ ساعت گذشته یا نه
+    import datetime
+    if isinstance(last, str):
+        try:
+            last = datetime.datetime.fromisoformat(last.replace("Z", "+00:00"))
+        except:
+            return True
+    
+    try:
+        diff = datetime.datetime.now() - last.replace(tzinfo=None) if hasattr(last, 'replace') else datetime.datetime.now() - last
+    except:
+        return True
+    
+    return diff.total_seconds() > 86400  # ۲۴ ساعت
 
 
 # ==================== تاریخچه ====================

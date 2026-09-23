@@ -1,9 +1,10 @@
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from config import OWNER_TELEGRAM_ID
-from database import get_user, add_user
+from database import get_user, add_user, needs_captcha, update_last_captcha
 from blockchain import create_wallet, add_member_on_chain
 from commands.helpers import MAIN_MENU, ADMIN_MENU
+from commands.captcha import send_captcha
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -11,6 +12,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     existing = get_user(user.id)
     
     if existing:
+        # چک کن کپچا لازمه یا نه (۲۴ ساعت)
+        if needs_captcha(user.id):
+            await send_captcha(update, context)
+            return
+        
+        # کپچا لازم نیست → منو
         menu = ADMIN_MENU if user.id == OWNER_TELEGRAM_ID else MAIN_MENU
         role = "👑 ادمین" if user.id == OWNER_TELEGRAM_ID else "👤 کاربر"
         
@@ -24,8 +31,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=menu
         )
     else:
-        # ✅ کاربر جدید → کپچا
-        from commands.captcha import send_captcha
+        # کاربر جدید → کپچا
         await send_captcha(update, context)
 
 
@@ -34,18 +40,9 @@ async def create_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user = query.from_user
     
-    # ✅ چک کن کپچا پاس شده
-    if not context.user_data.get("captcha_passed"):
-        await query.edit_message_text(
-            "⚠️ اول باید کپچا رو رد کنی!\n\n"
-            "👉 /start رو بزن"
-        )
-        return
-    
     # ساخت کیف پول
     wallet = create_wallet()
     
-    # اضافه کردن به دیتابیس
     success = add_user(
         user.id, user.username, user.first_name,
         wallet["address"], wallet["private_key"]
@@ -54,6 +51,9 @@ async def create_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not success:
         await query.edit_message_text("⚠️ قبلاً ثبت‌نام کردی!")
         return
+    
+    # ✅ ذخیره زمان کپچا
+    update_last_captcha(user.id)
     
     # اضافه کردن به عنوان عضو روی بلاک‌چین
     await query.edit_message_text("⏳ در حال ثبت نام روی بلاک‌چین...")
@@ -76,10 +76,6 @@ async def create_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"💡 از مالک بخواه بهت سکه بده\n"
             f"🔗 {tx_hash[:30]}..."
         )
-    
-    # پاک کردن کپچا
-    context.user_data.pop("captcha_passed", None)
-    context.user_data.pop("captcha_answer", None)
     
     menu = ADMIN_MENU if user.id == OWNER_TELEGRAM_ID else MAIN_MENU
     await context.bot.send_message(

@@ -7,7 +7,7 @@ from config import TELEGRAM_TOKEN, OWNER_TELEGRAM_ID
 from database import (
     init_db, get_user, get_all_users, get_user_by_username,
     add_history, create_bet, get_pending_reward,
-    update_pending_reward_status
+    update_pending_reward_status, needs_captcha
 )
 from blockchain import get_balance, send_tokens_from_owner, reward_winner
 from commands.helpers import MAIN_MENU, ADMIN_MENU, ADMIN_MAIN_MENU, format_number
@@ -50,6 +50,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data = query.data
     user_id = query.from_user.id
+    
+    # ✅ چک کپچا (به جز دکمه‌های کپچا و create_account)
+    if not data.startswith("captcha_") and data != "create_account":
+        user = get_user(user_id)
+        if user and needs_captcha(user_id):
+            await query.answer("⏱️ کپچا لازمه! /start رو بزن", show_alert=True)
+            return
     
     # ==================== کپچا ====================
     if data.startswith("captcha_"):
@@ -103,19 +110,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "1️⃣ تو پیوی ربات /bet بزن\n"
             "2️⃣ حریفت رو انتخاب کن\n"
             "3️⃣ عنوان شرط رو بنویس\n"
-            "   (مثلاً: بازی فیفا امشب)\n"
             "4️⃣ مقدار شرط رو انتخاب کن\n"
             "5️⃣ تایید کن\n\n"
-            "📩 بعدش ربات به حریفت پیام میده\n"
-            "✅ اگه قبول کرد، شرط ثبت میشه\n"
-            "❌ اگه رد کرد، شرط لغو میشه\n\n"
-            "🏆 بعد از مسابقه، ادمین برنده رو\n"
-            "انتخاب می‌کنه و جایزه واریز میشه\n\n"
+            "📩 ربات به حریفت پیام میده\n"
+            "✅ اگه قبول کرد، شرط ثبت میشه\n\n"
+            "🏆 ادمین برنده رو انتخاب می‌کنه\n"
             "💰 جایزه: ۲ برابر مقدار شرط\n"
-            "   (از هر دو طرف کم میشه)\n"
-            "━━━━━━━━━━━━━━━\n\n"
-            "💡 نکته: تو گروه هم می‌تونی\n"
-            "دستور /bet رو بزنی",
+            "━━━━━━━━━━━━━━━",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return
@@ -132,17 +133,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🎲 چطور تاس بازی کنم؟\n\n"
             "1️⃣ تو پیوی ربات /dice بزن\n"
             "2️⃣ تعداد بازیکن‌ها رو انتخاب کن\n"
-            "   (۲ تا ۶ نفر)\n"
             "3️⃣ بازیکن‌ها رو انتخاب کن\n"
             "4️⃣ مقدار شرط رو بنویس\n"
             "5️⃣ دکمه تاس رو بزن\n\n"
-            "🎲 ربات برای هر نفر یه عدد میندازه\n"
             "🏆 هر کی عدد بالاتر بیاره، برنده‌ست\n"
-            "⚖️ اگه مساوی شد، ادمین تصمیم می‌گیره\n\n"
             "💰 جایزه: مجموع شرط همه\n"
-            "━━━━━━━━━━━━━━━\n\n"
-            "💡 نکته: تو گروه هم می‌تونی\n"
-            "دستور /dice رو بزنی",
+            "━━━━━━━━━━━━━━━",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return
@@ -181,9 +177,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"━━━━━━━━━━━━━━━\n"
                 f"💎 به Mpyj Coin خوش اومدی\n"
                 f"━━━━━━━━━━━━━━━\n\n"
-                f"🎁 یه اقتصاد سرگرمی بین دوستان\n"
-                f"🪙 توکن اختصاصی برند Mpyj\n"
-                f"🎲 شرط‌بندی و مسابقه\n\n"
                 f"برای شروع، یه کیف پول برات می‌سازیم 👇",
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
@@ -528,6 +521,17 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not text.startswith("/"):
             return
         if not any(cmd in text for cmd in ["/start", "/bet", "/dice", "/admin", "/cancel"]):
+            return
+    
+    # ✅ چک کپچا (به جز /start)
+    if not text.startswith("/start"):
+        user = get_user(user_id)
+        if user and needs_captcha(user_id):
+            await update.message.reply_text(
+                "⏱️ **کپچا لازمه!**\n\n"
+                "برای ادامه استفاده، /start رو بزن و کپچا حل کن.",
+                parse_mode="Markdown"
+            )
             return
     
     # ===== انتظار مقدار تاس =====
