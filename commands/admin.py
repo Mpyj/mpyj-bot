@@ -5,8 +5,8 @@ from database import (
     get_all_users, get_user, get_all_pending_rewards,
     get_pending_reward, update_pending_reward_status, add_history,
     get_pending_bets, get_bet, update_bet_status,
-    create_nft_type, get_all_nft_types, update_nft_photo,
-    get_user_nfts
+    create_nft_type, get_all_nft_types, get_nft_type,
+    update_nft_photo, get_user_nfts, claim_user_nft
 )
 from blockchain import (
     get_balance, get_owner_eth_balance, get_owner_token_balance,
@@ -111,7 +111,7 @@ async def show_pending_rewards(update: Update, context: ContextTypes.DEFAULT_TYP
                     "nft": nft,
                 })
     
-    text = "🎁 جوایز در انتظار\n\n"
+    text = "🎯 جوایز در انتظار\n\n"
     text += "━━━━━━━━━━━━━━━\n"
     
     if not rewards and not special_users:
@@ -121,7 +121,7 @@ async def show_pending_rewards(update: Update, context: ContextTypes.DEFAULT_TYP
     
     keyboard = []
     
-    # جوایز معمولی
+    # ===== جوایز MPYJ =====
     if rewards:
         text += f"\n💰 جوایز MPYJ ({len(rewards)})\n\n"
         for r in rewards[:5]:
@@ -136,33 +136,47 @@ async def show_pending_rewards(update: Update, context: ContextTypes.DEFAULT_TYP
                 InlineKeyboardButton(f"❌ رد #{r['id']}", callback_data=f"reject_reward_{r['id']}"),
             ])
     
-    # جوایز ویژه (کانفیگ و برنامه‌نویسی)
-    if special_users:
-        text += f"\n🎁 جوایز ویژه ({len(special_users)})\n\n"
-        for s in special_users:
+    # ===== جوایز کانفیگ VPN =====
+    config_users = [s for s in special_users if s["nft"]["nft_type"] == "legend"]
+    if config_users:
+        text += f"\n🎁 جوایز کانفیگ VPN ({len(config_users)})\n\n"
+        for s in config_users:
             u = s["user"]
             nft = s["nft"]
             name = u["first_name"] or u["username"] or f"کاربر {u['telegram_id']}"
             
             text += f"👤 {name}\n"
             text += f"🏆 {nft['nft_name']}\n"
+            text += f"🎁 جایزه: کانفیگ رایگان VPN\n"
+            text += f"🆔 آیدی: {u['telegram_id']}\n\n"
             
-            if nft["nft_type"] == "legend":
-                text += f"🎁 جایزه: کانفیگ رایگان VPN\n\n"
-                keyboard.append([
-                    InlineKeyboardButton(
-                        f"🎁 تحویل کانفیگ به {name[:10]}",
-                        callback_data=f"claim_special_config_{nft['id']}_{u['telegram_id']}"
-                    )
-                ])
-            elif nft["nft_type"] == "champion":
-                text += f"🎁 جایزه: سفارش برنامه‌نویسی\n\n"
-                keyboard.append([
-                    InlineKeyboardButton(
-                        f"💻 تحویل برنامه‌نویسی به {name[:10]}",
-                        callback_data=f"claim_special_programming_{nft['id']}_{u['telegram_id']}"
-                    )
-                ])
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"🎁 تحویل کانفیگ به {name[:12]}",
+                    callback_data=f"claim_special_config_{nft['id']}_{u['telegram_id']}"
+                )
+            ])
+    
+    # ===== جوایز برنامه‌نویسی =====
+    prog_users = [s for s in special_users if s["nft"]["nft_type"] == "champion"]
+    if prog_users:
+        text += f"\n💻 جوایز برنامه‌نویسی ({len(prog_users)})\n\n"
+        for s in prog_users:
+            u = s["user"]
+            nft = s["nft"]
+            name = u["first_name"] or u["username"] or f"کاربر {u['telegram_id']}"
+            
+            text += f"👤 {name}\n"
+            text += f"🏆 {nft['nft_name']}\n"
+            text += f"🎁 جایزه: سفارش برنامه‌نویسی اختصاصی\n"
+            text += f"🆔 آیدی: {u['telegram_id']}\n\n"
+            
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"💻 تحویل برنامه‌نویسی به {name[:12]}",
+                    callback_data=f"claim_special_programming_{nft['id']}_{u['telegram_id']}"
+                )
+            ])
     
     text += "━━━━━━━━━━━━━━━"
     
@@ -181,7 +195,6 @@ async def manage_nfts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     nfts = get_all_nft_types()
     
     if not nfts:
-        # اگه NFT نداریم، پیشنهاد ساخت بده
         keyboard = [
             [InlineKeyboardButton("➕ ساخت NFT پیش‌فرض", callback_data="nft_create_defaults")],
         ]
@@ -203,8 +216,8 @@ async def manage_nfts(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"     🖼️ عکس: {has_photo}\n\n"
     
     text += "━━━━━━━━━━━━━━━\n"
-    text += "💡 برای آپلود عکس، از دستور\n"
-    text += "`/setnft <type_id>` استفاده کن"
+    text += "💡 برای آپلود عکس، از دکمه\n"
+    text += "🖼️ آپلود عکس NFT استفاده کن"
     
     await update.message.reply_text(text)
 
@@ -234,12 +247,45 @@ async def create_default_nfts(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     await query.edit_message_text(
         f"✅ {created} NFT پیش‌فرض ساخته شد!\n\n"
-        f"حالا با /setnft عکس‌هاشون رو آپلود کن."
+        f"حالا از 🖼️ آپلود عکس NFT استفاده کن."
+    )
+
+
+async def start_upload_nft_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """شروع آپلود عکس NFT"""
+    if not is_owner(update.effective_user.id):
+        return
+    
+    nfts = get_all_nft_types()
+    
+    if not nfts:
+        await update.message.reply_text(
+            "⚠️ هنوز NFT نساختی!\n\n"
+            "اول برو تو 🎨 مدیریت NFT → ساخت NFT پیش‌فرض"
+        )
+        return
+    
+    keyboard = []
+    for nft in nfts:
+        has_photo = "✅" if nft.get("photo_file_id") else "❌"
+        keyboard.append([InlineKeyboardButton(
+            f"{has_photo} {nft['emoji']} {nft['name']}",
+            callback_data=f"upload_nft_{nft['type_id']}"
+        )])
+    keyboard.append([InlineKeyboardButton("❌ لغو", callback_data="cancel_all")])
+    
+    await update.message.reply_text(
+        "🖼️ آپلود عکس NFT\n\n"
+        "━━━━━━━━━━━━━━━\n"
+        "کدوم NFT رو می‌خوای عکسش رو آپلود کنی؟\n\n"
+        "✅ = عکس داره\n"
+        "❌ = عکس نداره",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 
 async def set_nft_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """دستور /setnft <type_id> برای آپلود عکس"""
+    """دستور /setnft <type_id>"""
     if not is_owner(update.effective_user.id):
         return
     
@@ -263,9 +309,7 @@ async def set_nft_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"🖼️ آپلود عکس برای {nft['name']}\n\n"
         f"━━━━━━━━━━━━━━━\n"
-        f"حالا عکس رو بفرست (به صورت Photo)\n"
-        f"━━━━━━━━━━━━━━━\n\n"
-        f"💡 عکس باید با فرمت Photo باشه، نه File"
+        f"حالا عکس رو بفرست (به صورت Photo)"
     )
 
 
@@ -278,11 +322,9 @@ async def handle_nft_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not type_id:
         return
     
-    # گرفتن عکس
-    photo = update.message.photo[-1]  # بزرگترین سایز
+    photo = update.message.photo[-1]
     file_id = photo.file_id
     
-    # ذخیره تو دیتابیس
     update_nft_photo(type_id, file_id)
     
     nft = get_nft_type(type_id)
@@ -295,59 +337,45 @@ async def handle_nft_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# ==================== افزایش/کاهش ====================
-async def start_add_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ==================== شرط‌های در انتظار ====================
+async def show_pending_bets(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_owner(update.effective_user.id):
         return
     
-    users = get_all_users()
-    if not users:
-        await update.message.reply_text("😴 هنوز کسی عضو نشده!")
+    bets = get_pending_bets()
+    
+    if not bets:
+        await update.message.reply_text(
+            "🎲 شرط‌های در انتظار\n\n"
+            "━━━━━━━━━━━━━━━\n"
+            "هیچ شرطی در انتظار نیست!"
+        )
         return
+    
+    text = f"🎲 شرط‌های در انتظار ({len(bets)} مورد)\n\n━━━━━━━━━━━━━━━\n"
     
     keyboard = []
-    for u in users[:15]:
-        name = u["first_name"] or u["username"] or f"کاربر {u['telegram_id']}"
-        keyboard.append([InlineKeyboardButton(
-            f"➕ {name}",
-            callback_data=f"admin_add_{u['telegram_id']}"
-        )])
-    keyboard.append([InlineKeyboardButton("❌ لغو", callback_data="cancel_all")])
+    for b in bets[:10]:
+        p1 = get_user(b["player1_id"])
+        p2 = get_user(b["player2_id"])
+        n1 = p1["first_name"] or p1["username"] or "کاربر"
+        n2 = p2["first_name"] or p2["username"] or "کاربر"
+        
+        text += f"🆔 #{b['id']}\n"
+        text += f"📝 {b['title']}\n"
+        text += f"👤 {n1} vs {n2}\n"
+        text += f"💰 {b['amount']} MPYJ\n\n"
+        
+        keyboard.append([
+            InlineKeyboardButton(f"🏆 {n1}", callback_data=f"settle_{b['id']}_1"),
+            InlineKeyboardButton(f"🏆 {n2}", callback_data=f"settle_{b['id']}_2"),
+        ])
+    
+    text += "━━━━━━━━━━━━━━━"
     
     await update.message.reply_text(
-        "➕ به کی سکه بدم؟",
+        text,
         reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-
-
-async def start_remove_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_owner(update.effective_user.id):
-        return
-    
-    users = get_all_users()
-    keyboard = []
-    for u in users[:15]:
-        name = u["first_name"] or u["username"] or f"کاربر {u['telegram_id']}"
-        keyboard.append([InlineKeyboardButton(
-            f"➖ {name}",
-            callback_data=f"admin_remove_{u['telegram_id']}"
-        )])
-    keyboard.append([InlineKeyboardButton("❌ لغو", callback_data="cancel_all")])
-    
-    await update.message.reply_text(
-        "➖ از کی سکه کم کنم؟",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-
-
-async def start_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_owner(update.effective_user.id):
-        return
-    context.user_data["broadcast_mode"] = True
-    await update.message.reply_text(
-        "📢 پیام همگانی\n\n"
-        "متن پیام رو بنویس:\n"
-        "(یا /cancel بزن)"
     )
 
 
@@ -409,43 +437,58 @@ async def choose_reward_amount(update: Update, context: ContextTypes.DEFAULT_TYP
     )
 
 
-# ==================== شرط‌های در انتظار ====================
-async def show_pending_bets(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ==================== افزایش/کاهش ====================
+async def start_add_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_owner(update.effective_user.id):
         return
     
-    bets = get_pending_bets()
-    
-    if not bets:
-        await update.message.reply_text(
-            "🎲 شرط‌های در انتظار\n\n"
-            "━━━━━━━━━━━━━━━\n"
-            "هیچ شرطی در انتظار نیست!"
-        )
+    users = get_all_users()
+    if not users:
+        await update.message.reply_text("😴 هنوز کسی عضو نشده!")
         return
     
-    text = f"🎲 شرط‌های در انتظار ({len(bets)} مورد)\n\n━━━━━━━━━━━━━━━\n"
-    
     keyboard = []
-    for b in bets[:10]:
-        p1 = get_user(b["player1_id"])
-        p2 = get_user(b["player2_id"])
-        n1 = p1["first_name"] or p1["username"] or "کاربر"
-        n2 = p2["first_name"] or p2["username"] or "کاربر"
-        
-        text += f"🆔 #{b['id']}\n"
-        text += f"📝 {b['title']}\n"
-        text += f"👤 {n1} vs {n2}\n"
-        text += f"💰 {b['amount']} MPYJ\n\n"
-        
-        keyboard.append([
-            InlineKeyboardButton(f"🏆 {n1}", callback_data=f"settle_{b['id']}_1"),
-            InlineKeyboardButton(f"🏆 {n2}", callback_data=f"settle_{b['id']}_2"),
-        ])
-    
-    text += "━━━━━━━━━━━━━━━"
+    for u in users[:15]:
+        name = u["first_name"] or u["username"] or f"کاربر {u['telegram_id']}"
+        keyboard.append([InlineKeyboardButton(
+            f"➕ {name}",
+            callback_data=f"admin_add_{u['telegram_id']}"
+        )])
+    keyboard.append([InlineKeyboardButton("❌ لغو", callback_data="cancel_all")])
     
     await update.message.reply_text(
-        text,
+        "➕ به کی سکه بدم؟",
         reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+async def start_remove_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_owner(update.effective_user.id):
+        return
+    
+    users = get_all_users()
+    keyboard = []
+    for u in users[:15]:
+        name = u["first_name"] or u["username"] or f"کاربر {u['telegram_id']}"
+        keyboard.append([InlineKeyboardButton(
+            f"➖ {name}",
+            callback_data=f"admin_remove_{u['telegram_id']}"
+        )])
+    keyboard.append([InlineKeyboardButton("❌ لغو", callback_data="cancel_all")])
+    
+    await update.message.reply_text(
+        "➖ از کی سکه کم کنم؟",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+# ==================== پیام همگانی ====================
+async def start_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_owner(update.effective_user.id):
+        return
+    context.user_data["broadcast_mode"] = True
+    await update.message.reply_text(
+        "📢 پیام همگانی\n\n"
+        "متن پیام رو بنویس:\n"
+        "(یا /cancel بزن)"
     )

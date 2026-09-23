@@ -8,7 +8,7 @@ from database import (
     init_db, get_user, get_all_users, get_user_by_username,
     add_history, create_bet, get_pending_reward,
     update_pending_reward_status, needs_captcha,
-    claim_user_nft
+    claim_user_nft, get_nft_type
 )
 from blockchain import get_balance, send_tokens_from_owner, reward_winner
 from commands.helpers import MAIN_MENU, ADMIN_MENU, ADMIN_MAIN_MENU, format_number
@@ -49,7 +49,8 @@ from commands.admin import (
     start_reward, choose_reward_amount,
     start_add_balance, start_remove_balance, start_broadcast,
     show_pending_rewards, show_pending_bets,
-    manage_nfts, create_default_nfts, set_nft_command, handle_nft_photo
+    manage_nfts, create_default_nfts, set_nft_command, handle_nft_photo,
+    start_upload_nft_photo
 )
 
 
@@ -64,7 +65,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_id = query.from_user.id
     
-    # ✅ چک کپچا (به جز دکمه‌های کپچا و create_account)
+    # چک کپچا
     if not data.startswith("captcha_") and data != "create_account":
         user = get_user(user_id)
         if user and needs_captcha(user_id):
@@ -104,13 +105,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
         except:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text="📖 راهنما: از منو استفاده کن"
-            )
+            await context.bot.send_message(chat_id=user_id, text="📖 راهنما: از منو استفاده کن")
         return
     
-    # ==================== راهنمای شرط‌بندی ====================
+    # ==================== راهنمای شرط ====================
     elif data == "help_bet":
         keyboard = [
             [InlineKeyboardButton("🎲 شروع شرط‌بندی", callback_data="start_bet_from_help")],
@@ -276,17 +274,78 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "nft_create_defaults":
         await create_default_nfts(update, context)
         return
+    elif data.startswith("upload_nft_"):
+        type_id = data.replace("upload_nft_", "")
+        nft = get_nft_type(type_id)
+        
+        if not nft:
+            await query.edit_message_text("⚠️ NFT پیدا نشد!")
+            return
+        
+        context.user_data["setnft_type"] = type_id
+        
+        await query.edit_message_text(
+            f"🖼️ آپلود عکس برای {nft['emoji']} {nft['name']}\n\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"حالا عکس رو بفرست (به صورت Photo)\n"
+            f"━━━━━━━━━━━━━━━\n\n"
+            f"💡 عکس باید با فرمت Photo باشه، نه File"
+        )
+        return
     elif data.startswith("claim_special_config_"):
         parts = data.replace("claim_special_config_", "").split("_")
         nft_id = int(parts[0])
+        target_user_id = int(parts[1])
+        
         claim_user_nft(nft_id)
-        await query.edit_message_text(f"✅ کانفیگ تحویل داده شد!\n🆔 NFT #{nft_id}")
+        
+        try:
+            await context.bot.send_message(
+                chat_id=target_user_id,
+                text=(
+                    "🎁 **جایزه کانفیگ VPN!**\n\n"
+                    "━━━━━━━━━━━━━━━\n"
+                    "ادمین جایزه‌ت رو تایید کرد!\n"
+                    "🎉 به‌زودی کانفیگ برات فرستاده میشه."
+                ),
+                parse_mode="Markdown"
+            )
+        except:
+            pass
+        
+        await query.edit_message_text(
+            f"✅ کانفیگ تحویل داده شد!\n\n"
+            f"🆔 NFT #{nft_id}\n"
+            f"👤 کاربر: {target_user_id}"
+        )
         return
     elif data.startswith("claim_special_programming_"):
         parts = data.replace("claim_special_programming_", "").split("_")
         nft_id = int(parts[0])
+        target_user_id = int(parts[1])
+        
         claim_user_nft(nft_id)
-        await query.edit_message_text(f"✅ سفارش برنامه‌نویسی ثبت شد!\n🆔 NFT #{nft_id}")
+        
+        try:
+            await context.bot.send_message(
+                chat_id=target_user_id,
+                text=(
+                    "💻 **جایزه برنامه‌نویسی!**\n\n"
+                    "━━━━━━━━━━━━━━━\n"
+                    "ادمین جایزه‌ت رو تایید کرد!\n"
+                    "🎉 سفارش برنامه‌نویسی‌ت ثبت شد.\n\n"
+                    "⏳ به‌زودی ادمین باهات تماس می‌گیره."
+                ),
+                parse_mode="Markdown"
+            )
+        except:
+            pass
+        
+        await query.edit_message_text(
+            f"✅ سفارش برنامه‌نویسی ثبت شد!\n\n"
+            f"🆔 NFT #{nft_id}\n"
+            f"👤 کاربر: {target_user_id}"
+        )
         return
     
     # ==================== تاس ====================
@@ -461,7 +520,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ==================== هندل پیام‌های متنی ====================
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
+    text = update.message.text if update.message.text else ""
     user_id = update.effective_user.id
     chat_type = update.effective_chat.type
     
@@ -473,13 +532,13 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
     
     # چک کپچا
-    if not text.startswith("/start"):
+    if text and not text.startswith("/start"):
         user = get_user(user_id)
         if user and needs_captcha(user_id):
             await update.message.reply_text("⏱️ کپچا لازمه! /start بزن.")
             return
     
-    # آپلود عکس NFT (ادمین)
+    # آپلود عکس NFT
     if is_owner(user_id) and context.user_data.get("setnft_type"):
         if update.message.photo:
             await handle_nft_photo(update, context)
@@ -608,7 +667,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("👑 پنل ادمین:", reply_markup=ADMIN_MENU)
         return
     
-    # منوی ادمین
+    # ==================== منوی ادمین ====================
     if is_owner(user_id):
         if text == "👥 کاربران":
             await show_users(update, context)
@@ -637,8 +696,11 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif text == "🎨 مدیریت NFT":
             await manage_nfts(update, context)
             return
+        elif text == "🖼️ آپلود عکس NFT":
+            await start_upload_nft_photo(update, context)
+            return
     
-    # منوی کاربری
+    # ==================== منوی کاربری ====================
     if text == "💰 موجودی":
         await show_balance(update, context)
     elif text == "📤 ارسال":
