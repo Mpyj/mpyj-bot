@@ -37,6 +37,7 @@ def init_db():
                 wallet_address TEXT,
                 encrypted_private_key TEXT,
                 last_captcha TIMESTAMP,
+                character TEXT DEFAULT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -110,6 +111,55 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS clans (
+                id SERIAL PRIMARY KEY,
+                name TEXT UNIQUE,
+                owner_id BIGINT,
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS clan_members (
+                id SERIAL PRIMARY KEY,
+                clan_id INTEGER,
+                user_id BIGINT UNIQUE,
+                joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS clan_invites (
+                id SERIAL PRIMARY KEY,
+                clan_id INTEGER,
+                inviter_id BIGINT,
+                invitee_id BIGINT,
+                status TEXT DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS nft_types (
+                id SERIAL PRIMARY KEY,
+                type_id TEXT UNIQUE,
+                name TEXT,
+                emoji TEXT,
+                required BIGINT,
+                reward TEXT,
+                photo_file_id TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS user_nfts (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT,
+                nft_type TEXT,
+                claimed BOOLEAN DEFAULT FALSE,
+                claimed_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
     else:
         c.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -119,6 +169,7 @@ def init_db():
                 wallet_address TEXT,
                 encrypted_private_key TEXT,
                 last_captcha TIMESTAMP,
+                character TEXT DEFAULT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -189,6 +240,55 @@ def init_db():
                 user_id INTEGER,
                 bet_amount INTEGER DEFAULT 0,
                 dice_value INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS clans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE,
+                owner_id INTEGER,
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS clan_members (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                clan_id INTEGER,
+                user_id INTEGER UNIQUE,
+                joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS clan_invites (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                clan_id INTEGER,
+                inviter_id INTEGER,
+                invitee_id INTEGER,
+                status TEXT DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS nft_types (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                type_id TEXT UNIQUE,
+                name TEXT,
+                emoji TEXT,
+                required INTEGER,
+                reward TEXT,
+                photo_file_id TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS user_nfts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                nft_type TEXT,
+                claimed INTEGER DEFAULT 0,
+                claimed_at TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -294,52 +394,37 @@ def get_user_by_username(username):
 
 # ==================== کپچا ====================
 def update_last_captcha(telegram_id):
-    """ذخیره زمان آخرین کپچا"""
     conn = get_conn()
     c = conn.cursor()
     if USE_POSTGRES:
-        c.execute(f"""
-            UPDATE users SET last_captcha = CURRENT_TIMESTAMP
-            WHERE telegram_id = {PLACEHOLDER}
-        """, (telegram_id,))
+        c.execute(f"UPDATE users SET last_captcha = CURRENT_TIMESTAMP WHERE telegram_id = {PLACEHOLDER}", (telegram_id,))
     else:
-        c.execute(f"""
-            UPDATE users SET last_captcha = datetime('now')
-            WHERE telegram_id = {PLACEHOLDER}
-        """, (telegram_id,))
+        c.execute(f"UPDATE users SET last_captcha = datetime('now') WHERE telegram_id = {PLACEHOLDER}", (telegram_id,))
     conn.commit()
     c.close()
     conn.close()
 
 
 def needs_captcha(telegram_id):
-    """چک کن کاربر نیاز به کپچا داره یا نه (۲۴ ساعت)"""
     conn = get_conn()
     if USE_POSTGRES:
         c = conn.cursor(cursor_factory=RealDictCursor)
-        c.execute(f"""
-            SELECT last_captcha FROM users
-            WHERE telegram_id = {PLACEHOLDER}
-        """, (telegram_id,))
+        c.execute(f"SELECT last_captcha FROM users WHERE telegram_id = {PLACEHOLDER}", (telegram_id,))
     else:
         c = conn.cursor()
-        c.execute(f"""
-            SELECT last_captcha FROM users
-            WHERE telegram_id = {PLACEHOLDER}
-        """, (telegram_id,))
+        c.execute(f"SELECT last_captcha FROM users WHERE telegram_id = {PLACEHOLDER}", (telegram_id,))
     row = c.fetchone()
     c.close()
     conn.close()
     
     if not row:
-        return True  # کاربر وجود نداره
+        return True
     
     last = row["last_captcha"] if USE_POSTGRES else row[0]
     
     if last is None:
-        return True  # هیچ‌وقت کپچا نداده
+        return True
     
-    # چک کن ۲۴ ساعت گذشته یا نه
     import datetime
     if isinstance(last, str):
         try:
@@ -348,11 +433,31 @@ def needs_captcha(telegram_id):
             return True
     
     try:
-        diff = datetime.datetime.now() - last.replace(tzinfo=None) if hasattr(last, 'replace') else datetime.datetime.now() - last
+        now = datetime.datetime.now()
+        if hasattr(last, 'tzinfo') and last.tzinfo:
+            now = datetime.datetime.now(datetime.timezone.utc)
+        diff = now - last
     except:
         return True
     
-    return diff.total_seconds() > 86400  # ۲۴ ساعت
+    return diff.total_seconds() > 86400
+
+
+# ==================== شخصیت‌ها ====================
+def set_character(telegram_id, character):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(f"UPDATE users SET character = {PLACEHOLDER} WHERE telegram_id = {PLACEHOLDER}", (character, telegram_id))
+    conn.commit()
+    c.close()
+    conn.close()
+
+
+def get_character(telegram_id):
+    user = get_user(telegram_id)
+    if user:
+        return user.get("character")
+    return None
 
 
 # ==================== تاریخچه ====================
@@ -436,10 +541,7 @@ def get_pending_bets():
 def update_bet_status(bet_id, status, winner_id=None):
     conn = get_conn()
     c = conn.cursor()
-    c.execute(f"""
-        UPDATE bets SET status = {PLACEHOLDER}, winner_id = {PLACEHOLDER}
-        WHERE id = {PLACEHOLDER}
-    """, (status, winner_id, bet_id))
+    c.execute(f"UPDATE bets SET status = {PLACEHOLDER}, winner_id = {PLACEHOLDER} WHERE id = {PLACEHOLDER}", (status, winner_id, bet_id))
     conn.commit()
     c.close()
     conn.close()
@@ -450,16 +552,10 @@ def create_pending_reward(user_id, amount, reason):
     conn = get_conn()
     c = conn.cursor()
     if USE_POSTGRES:
-        c.execute("""
-            INSERT INTO pending_rewards (user_id, amount, reason)
-            VALUES (%s, %s, %s) RETURNING id
-        """, (user_id, amount, reason))
+        c.execute("INSERT INTO pending_rewards (user_id, amount, reason) VALUES (%s, %s, %s) RETURNING id", (user_id, amount, reason))
         reward_id = c.fetchone()[0]
     else:
-        c.execute("""
-            INSERT INTO pending_rewards (user_id, amount, reason)
-            VALUES (?, ?, ?)
-        """, (user_id, amount, reason))
+        c.execute("INSERT INTO pending_rewards (user_id, amount, reason) VALUES (?, ?, ?)", (user_id, amount, reason))
         reward_id = c.lastrowid
     conn.commit()
     c.close()
@@ -483,9 +579,7 @@ def get_pending_reward(reward_id):
 def update_pending_reward_status(reward_id, status):
     conn = get_conn()
     c = conn.cursor()
-    c.execute(f"""
-        UPDATE pending_rewards SET status = {PLACEHOLDER} WHERE id = {PLACEHOLDER}
-    """, (status, reward_id))
+    c.execute(f"UPDATE pending_rewards SET status = {PLACEHOLDER} WHERE id = {PLACEHOLDER}", (status, reward_id))
     conn.commit()
     c.close()
     conn.close()
@@ -530,10 +624,7 @@ def has_done_quest_today(user_id, quest_type):
 def add_quest_completion(user_id, quest_type):
     conn = get_conn()
     c = conn.cursor()
-    c.execute(f"""
-        INSERT INTO daily_quests (user_id, quest_type)
-        VALUES ({PLACEHOLDER}, {PLACEHOLDER})
-    """, (user_id, quest_type))
+    c.execute(f"INSERT INTO daily_quests (user_id, quest_type) VALUES ({PLACEHOLDER}, {PLACEHOLDER})", (user_id, quest_type))
     conn.commit()
     c.close()
     conn.close()
@@ -549,24 +640,14 @@ def buy_lottery_ticket(user_id):
     week = get_week_number()
     conn = get_conn()
     c = conn.cursor()
-    
-    c.execute(f"""
-        SELECT * FROM lottery_tickets 
-        WHERE user_id = {PLACEHOLDER} AND week_number = {PLACEHOLDER}
-    """, (user_id, week))
-    
+    c.execute(f"SELECT * FROM lottery_tickets WHERE user_id = {PLACEHOLDER} AND week_number = {PLACEHOLDER}", (user_id, week))
     if c.fetchone():
         c.close()
         conn.close()
         return None, "تو این هفته قبلاً بلیط خریدی!"
-    
     import random
     ticket_number = random.randint(1000, 9999)
-    
-    c.execute(f"""
-        INSERT INTO lottery_tickets (user_id, ticket_number, week_number)
-        VALUES ({PLACEHOLDER}, {PLACEHOLDER}, {PLACEHOLDER})
-    """, (user_id, ticket_number, week))
+    c.execute(f"INSERT INTO lottery_tickets (user_id, ticket_number, week_number) VALUES ({PLACEHOLDER}, {PLACEHOLDER}, {PLACEHOLDER})", (user_id, ticket_number, week))
     conn.commit()
     c.close()
     conn.close()
@@ -580,9 +661,7 @@ def get_lottery_participants():
         c = conn.cursor(cursor_factory=RealDictCursor)
     else:
         c = conn.cursor()
-    c.execute(f"""
-        SELECT * FROM lottery_tickets WHERE week_number = {PLACEHOLDER}
-    """, (week,))
+    c.execute(f"SELECT * FROM lottery_tickets WHERE week_number = {PLACEHOLDER}", (week,))
     rows = c.fetchall()
     c.close()
     conn.close()
@@ -622,10 +701,7 @@ def add_dice_player(game_id, user_id, bet_amount=0):
     conn = get_conn()
     c = conn.cursor()
     try:
-        c.execute(f"""
-            INSERT INTO dice_players (game_id, user_id, bet_amount)
-            VALUES ({PLACEHOLDER}, {PLACEHOLDER}, {PLACEHOLDER})
-        """, (game_id, user_id, bet_amount))
+        c.execute(f"INSERT INTO dice_players (game_id, user_id, bet_amount) VALUES ({PLACEHOLDER}, {PLACEHOLDER}, {PLACEHOLDER})", (game_id, user_id, bet_amount))
         conn.commit()
         return True
     except Exception as e:
@@ -653,10 +729,7 @@ def get_dice_players(game_id):
 def update_dice_value(game_id, user_id, dice_value):
     conn = get_conn()
     c = conn.cursor()
-    c.execute(f"""
-        UPDATE dice_players SET dice_value = {PLACEHOLDER}
-        WHERE game_id = {PLACEHOLDER} AND user_id = {PLACEHOLDER}
-    """, (dice_value, game_id, user_id))
+    c.execute(f"UPDATE dice_players SET dice_value = {PLACEHOLDER} WHERE game_id = {PLACEHOLDER} AND user_id = {PLACEHOLDER}", (dice_value, game_id, user_id))
     conn.commit()
     c.close()
     conn.close()
@@ -665,10 +738,7 @@ def update_dice_value(game_id, user_id, dice_value):
 def update_dice_bet(game_id, user_id, bet_amount):
     conn = get_conn()
     c = conn.cursor()
-    c.execute(f"""
-        UPDATE dice_players SET bet_amount = {PLACEHOLDER}
-        WHERE game_id = {PLACEHOLDER} AND user_id = {PLACEHOLDER}
-    """, (bet_amount, game_id, user_id))
+    c.execute(f"UPDATE dice_players SET bet_amount = {PLACEHOLDER} WHERE game_id = {PLACEHOLDER} AND user_id = {PLACEHOLDER}", (bet_amount, game_id, user_id))
     conn.commit()
     c.close()
     conn.close()
@@ -677,10 +747,293 @@ def update_dice_bet(game_id, user_id, bet_amount):
 def update_dice_game_status(game_id, status, winner_id=None, dice_value=None):
     conn = get_conn()
     c = conn.cursor()
-    c.execute(f"""
-        UPDATE dice_games SET status = {PLACEHOLDER}, winner_id = {PLACEHOLDER}, dice_value = {PLACEHOLDER}
-        WHERE id = {PLACEHOLDER}
-    """, (status, winner_id, dice_value, game_id))
+    c.execute(f"UPDATE dice_games SET status = {PLACEHOLDER}, winner_id = {PLACEHOLDER}, dice_value = {PLACEHOLDER} WHERE id = {PLACEHOLDER}", (status, winner_id, dice_value, game_id))
+    conn.commit()
+    c.close()
+    conn.close()
+
+
+# ==================== کلن‌ها ====================
+def create_clan(name, owner_id, description=""):
+    conn = get_conn()
+    c = conn.cursor()
+    try:
+        if USE_POSTGRES:
+            c.execute("INSERT INTO clans (name, owner_id, description) VALUES (%s, %s, %s) RETURNING id", (name, owner_id, description))
+            clan_id = c.fetchone()[0]
+        else:
+            c.execute("INSERT INTO clans (name, owner_id, description) VALUES (?, ?, ?)", (name, owner_id, description))
+            clan_id = c.lastrowid
+        conn.commit()
+        return clan_id, None
+    except Exception as e:
+        conn.rollback()
+        return None, str(e)
+    finally:
+        c.close()
+        conn.close()
+
+
+def get_clan(clan_id):
+    conn = get_conn()
+    if USE_POSTGRES:
+        c = conn.cursor(cursor_factory=RealDictCursor)
+    else:
+        c = conn.cursor()
+    c.execute(f"SELECT * FROM clans WHERE id = {PLACEHOLDER}", (clan_id,))
+    row = c.fetchone()
+    c.close()
+    conn.close()
+    return _row_to_dict(row)
+
+
+def get_clan_by_name(name):
+    conn = get_conn()
+    if USE_POSTGRES:
+        c = conn.cursor(cursor_factory=RealDictCursor)
+    else:
+        c = conn.cursor()
+    c.execute(f"SELECT * FROM clans WHERE name = {PLACEHOLDER}", (name,))
+    row = c.fetchone()
+    c.close()
+    conn.close()
+    return _row_to_dict(row)
+
+
+def get_user_clan(user_id):
+    conn = get_conn()
+    if USE_POSTGRES:
+        c = conn.cursor(cursor_factory=RealDictCursor)
+    else:
+        c = conn.cursor()
+    c.execute(f"SELECT * FROM clan_members WHERE user_id = {PLACEHOLDER}", (user_id,))
+    row = c.fetchone()
+    c.close()
+    conn.close()
+    return _row_to_dict(row)
+
+
+def add_clan_member(clan_id, user_id):
+    conn = get_conn()
+    c = conn.cursor()
+    try:
+        c.execute(f"INSERT INTO clan_members (clan_id, user_id) VALUES ({PLACEHOLDER}, {PLACEHOLDER})", (clan_id, user_id))
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        return False
+    finally:
+        c.close()
+        conn.close()
+
+
+def remove_clan_member(clan_id, user_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(f"DELETE FROM clan_members WHERE clan_id = {PLACEHOLDER} AND user_id = {PLACEHOLDER}", (clan_id, user_id))
+    conn.commit()
+    c.close()
+    conn.close()
+
+
+def get_clan_members(clan_id):
+    conn = get_conn()
+    if USE_POSTGRES:
+        c = conn.cursor(cursor_factory=RealDictCursor)
+    else:
+        c = conn.cursor()
+    c.execute(f"SELECT * FROM clan_members WHERE clan_id = {PLACEHOLDER}", (clan_id,))
+    rows = c.fetchall()
+    c.close()
+    conn.close()
+    return [_row_to_dict(r) for r in rows]
+
+
+def get_all_clans():
+    conn = get_conn()
+    if USE_POSTGRES:
+        c = conn.cursor(cursor_factory=RealDictCursor)
+    else:
+        c = conn.cursor()
+    c.execute("SELECT * FROM clans ORDER BY created_at DESC")
+    rows = c.fetchall()
+    c.close()
+    conn.close()
+    return [_row_to_dict(r) for r in rows]
+
+
+def create_clan_invite(clan_id, inviter_id, invitee_id):
+    conn = get_conn()
+    c = conn.cursor()
+    try:
+        if USE_POSTGRES:
+            c.execute("INSERT INTO clan_invites (clan_id, inviter_id, invitee_id) VALUES (%s, %s, %s) RETURNING id", (clan_id, inviter_id, invitee_id))
+            invite_id = c.fetchone()[0]
+        else:
+            c.execute("INSERT INTO clan_invites (clan_id, inviter_id, invitee_id) VALUES (?, ?, ?)", (clan_id, inviter_id, invitee_id))
+            invite_id = c.lastrowid
+        conn.commit()
+        return invite_id, None
+    except Exception as e:
+        conn.rollback()
+        return None, str(e)
+    finally:
+        c.close()
+        conn.close()
+
+
+def get_clan_invite(invite_id):
+    conn = get_conn()
+    if USE_POSTGRES:
+        c = conn.cursor(cursor_factory=RealDictCursor)
+    else:
+        c = conn.cursor()
+    c.execute(f"SELECT * FROM clan_invites WHERE id = {PLACEHOLDER}", (invite_id,))
+    row = c.fetchone()
+    c.close()
+    conn.close()
+    return _row_to_dict(row)
+
+
+def update_clan_invite_status(invite_id, status):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(f"UPDATE clan_invites SET status = {PLACEHOLDER} WHERE id = {PLACEHOLDER}", (status, invite_id))
+    conn.commit()
+    c.close()
+    conn.close()
+
+
+def get_pending_invite_for_user(user_id):
+    conn = get_conn()
+    if USE_POSTGRES:
+        c = conn.cursor(cursor_factory=RealDictCursor)
+    else:
+        c = conn.cursor()
+    c.execute(f"SELECT * FROM clan_invites WHERE invitee_id = {PLACEHOLDER} AND status = 'pending' ORDER BY created_at DESC LIMIT 1", (user_id,))
+    row = c.fetchone()
+    c.close()
+    conn.close()
+    return _row_to_dict(row)
+
+
+def delete_clan(clan_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(f"DELETE FROM clan_members WHERE clan_id = {PLACEHOLDER}", (clan_id,))
+    c.execute(f"DELETE FROM clan_invites WHERE clan_id = {PLACEHOLDER}", (clan_id,))
+    c.execute(f"DELETE FROM clans WHERE id = {PLACEHOLDER}", (clan_id,))
+    conn.commit()
+    c.close()
+    conn.close()
+
+
+# ==================== NFT ====================
+def create_nft_type(type_id, name, emoji, required, reward, photo_file_id):
+    conn = get_conn()
+    c = conn.cursor()
+    try:
+        if USE_POSTGRES:
+            c.execute("INSERT INTO nft_types (type_id, name, emoji, required, reward, photo_file_id) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id", (type_id, name, emoji, required, reward, photo_file_id))
+            nft_id = c.fetchone()[0]
+        else:
+            c.execute("INSERT INTO nft_types (type_id, name, emoji, required, reward, photo_file_id) VALUES (?, ?, ?, ?, ?, ?)", (type_id, name, emoji, required, reward, photo_file_id))
+            nft_id = c.lastrowid
+        conn.commit()
+        return nft_id, None
+    except Exception as e:
+        conn.rollback()
+        return None, str(e)
+    finally:
+        c.close()
+        conn.close()
+
+
+def get_all_nft_types():
+    conn = get_conn()
+    if USE_POSTGRES:
+        c = conn.cursor(cursor_factory=RealDictCursor)
+    else:
+        c = conn.cursor()
+    c.execute("SELECT * FROM nft_types ORDER BY required ASC")
+    rows = c.fetchall()
+    c.close()
+    conn.close()
+    return [_row_to_dict(r) for r in rows]
+
+
+def get_nft_type(type_id):
+    conn = get_conn()
+    if USE_POSTGRES:
+        c = conn.cursor(cursor_factory=RealDictCursor)
+    else:
+        c = conn.cursor()
+    c.execute(f"SELECT * FROM nft_types WHERE type_id = {PLACEHOLDER}", (type_id,))
+    row = c.fetchone()
+    c.close()
+    conn.close()
+    return _row_to_dict(row)
+
+
+def update_nft_photo(type_id, photo_file_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(f"UPDATE nft_types SET photo_file_id = {PLACEHOLDER} WHERE type_id = {PLACEHOLDER}", (photo_file_id, type_id))
+    conn.commit()
+    c.close()
+    conn.close()
+
+
+def has_user_nft(user_id, nft_type):
+    conn = get_conn()
+    if USE_POSTGRES:
+        c = conn.cursor(cursor_factory=RealDictCursor)
+    else:
+        c = conn.cursor()
+    c.execute(f"SELECT * FROM user_nfts WHERE user_id = {PLACEHOLDER} AND nft_type = {PLACEHOLDER}", (user_id, nft_type))
+    row = c.fetchone()
+    c.close()
+    conn.close()
+    return row is not None
+
+
+def give_user_nft(user_id, nft_type):
+    conn = get_conn()
+    c = conn.cursor()
+    try:
+        c.execute(f"INSERT INTO user_nfts (user_id, nft_type) VALUES ({PLACEHOLDER}, {PLACEHOLDER})", (user_id, nft_type))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"❌ give_user_nft: {e}")
+        conn.rollback()
+        return False
+    finally:
+        c.close()
+        conn.close()
+
+
+def get_user_nfts(user_id):
+    conn = get_conn()
+    if USE_POSTGRES:
+        c = conn.cursor(cursor_factory=RealDictCursor)
+    else:
+        c = conn.cursor()
+    c.execute(f"SELECT * FROM user_nfts WHERE user_id = {PLACEHOLDER} ORDER BY created_at DESC", (user_id,))
+    rows = c.fetchall()
+    c.close()
+    conn.close()
+    return [_row_to_dict(r) for r in rows]
+
+
+def claim_user_nft(nft_id):
+    conn = get_conn()
+    c = conn.cursor()
+    if USE_POSTGRES:
+        c.execute(f"UPDATE user_nfts SET claimed = TRUE, claimed_at = CURRENT_TIMESTAMP WHERE id = {PLACEHOLDER}", (nft_id,))
+    else:
+        c.execute(f"UPDATE user_nfts SET claimed = 1, claimed_at = datetime('now') WHERE id = {PLACEHOLDER}", (nft_id,))
     conn.commit()
     c.close()
     conn.close()
